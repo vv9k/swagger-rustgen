@@ -108,6 +108,10 @@ impl<'de> de::Deserialize<'de> for Item {
 }
 
 enum RustType {
+    I8,
+    U8,
+    I16,
+    U16,
     I32,
     U32,
     I64,
@@ -122,12 +126,17 @@ enum RustType {
     Object(Box<RustType>),
     Option(Box<RustType>),
     Custom(String),
+    JsonValue,
 }
 
 impl fmt::Display for RustType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use RustType::*;
         match self {
+            I8 => write!(f, "i8"),
+            U8 => write!(f, "u8"),
+            I16 => write!(f, "i16"),
+            U16 => write!(f, "u16"),
             I32 => write!(f, "i32"),
             U32 => write!(f, "u32"),
             I64 => write!(f, "i64"),
@@ -142,29 +151,47 @@ impl fmt::Display for RustType {
             Object(ty) => write!(f, "HashMap<String, {ty}>"),
             Option(ty) => write!(f, "Option<{ty}>"),
             Custom(ty) => write!(f, "{ty}"),
+            JsonValue => write!(f, "serde_json::Value"),
         }
+    }
+}
+
+impl RustType {
+    fn from_integer_format(format: &str) -> Option<Self> {
+        let ty = match format {
+            "int" => RustType::ISize,
+            "uint" => RustType::USize,
+            "int64" => RustType::I64,
+            "uint64" => RustType::U64,
+            "int32" => RustType::I32,
+            "uint32" => RustType::U32,
+            "int16" => RustType::I16,
+            "uint16" => RustType::U16,
+            "int8" => RustType::I8,
+            "uint8" => RustType::U8,
+            _ => return None,
+        };
+
+        Some(ty)
     }
 }
 
 fn map_schema_type(schema: &Schema, ref_: Option<&str>) -> Option<RustType> {
     let ty = schema.type_.as_deref()?;
     match ty {
-        "integer" => {
-            let ty = match schema.format.as_deref() {
-                Some("int64") => RustType::I64,
-                Some("uint64") => RustType::U64,
-                Some("int32") => RustType::I32,
-                Some("uint32") => RustType::U32,
-                Some("int") => RustType::ISize,
-                Some("uint") => RustType::USize,
-                _ => return None,
-            };
-            Some(ty)
-        }
+        "integer" => schema
+            .format
+            .as_ref()
+            .and_then(|format| RustType::from_integer_format(format))
+            .or(Some(RustType::USize)),
         "string" => Some(RustType::String),
         "boolean" => Some(RustType::Bool),
         "array" => {
-            println!("got array schema {:?}", schema);
+            if let Some(ref_) = ref_ {
+                return Some(RustType::Vec(Box::new(RustType::Custom(
+                    ref_.trim_start_matches(DEFINITIONS_REF).to_string(),
+                ))));
+            }
             None
         }
         "object" => {
@@ -187,67 +214,66 @@ fn map_schema_type(schema: &Schema, ref_: Option<&str>) -> Option<RustType> {
     }
 }
 
+fn map_item_ref(ref_: &str, definitions: &Definitions) -> Option<RustType> {
+    let schema = definitions.get(ref_)?;
+    map_schema_type(schema, Some(ref_))
+}
+
+fn map_item_object(
+    item: &ItemsObject,
+    is_required: bool,
+    definitions: &Definitions,
+) -> Option<RustType> {
+    let ty = item.type_.as_deref()?;
+    let mut ty = match ty {
+        "integer" => item
+            .format
+            .as_ref()
+            .and_then(|format| RustType::from_integer_format(format))
+            .unwrap_or(RustType::USize),
+        "string" => RustType::String,
+        "boolean" => RustType::Bool,
+        "array" => match &item.items {
+            Some(Item::Reference(ref_)) => {
+                let ty = map_item_ref(ref_, definitions)?;
+                RustType::Vec(Box::new(ty))
+            }
+            Some(item) => {
+                let ty = map_item_type(&item, true, definitions)?;
+                RustType::Vec(Box::new(ty))
+            }
+            None => return None,
+        },
+        "object" => match &item.additional_properties {
+            Some(Item::Reference(ref_)) => {
+                let ty = map_item_ref(ref_, definitions)?;
+                RustType::Object(Box::new(ty))
+            }
+            Some(item) => {
+                let ty = map_item_type(&item, true, definitions)?;
+                RustType::Object(Box::new(ty))
+            }
+            None => RustType::Object(Box::new(RustType::JsonValue)),
+        },
+        "number" => match item.format.as_deref() {
+            Some("double") => RustType::F64,
+            Some("float") => RustType::F32,
+            _ => return None,
+        },
+        _ => return None,
+    };
+
+    if !is_required {
+        ty = RustType::Option(Box::new(ty));
+    }
+
+    Some(ty)
+}
+
 fn map_item_type(item: &Item, is_required: bool, definitions: &Definitions) -> Option<RustType> {
     match item {
-        Item::Reference(ref_) => {
-            let schema = definitions.get(ref_)?;
-            map_schema_type(schema, Some(ref_))
-        }
-        Item::Object(item) => {
-            let ty = item.type_.as_deref()?;
-            let mut ty = match ty {
-                "integer" => match item.format.as_deref() {
-                    Some("int64") => RustType::I64,
-                    Some("uint64") => RustType::U64,
-                    Some("int32") => RustType::I32,
-                    Some("uint32") => RustType::U32,
-                    Some("int") => RustType::ISize,
-                    Some("uint") => RustType::USize,
-                    _ => return None,
-                },
-                "string" => RustType::String,
-                "boolean" => RustType::Bool,
-                "array" => match &item.items {
-                    Some(Item::Reference(ref_)) => {
-                        let schema = definitions.get(ref_)?;
-                        let ty = map_schema_type(schema, Some(ref_))?;
-                        RustType::Vec(Box::new(ty))
-                    }
-                    Some(item) => {
-                        let ty = map_item_type(&item, true, definitions)?;
-                        RustType::Vec(Box::new(ty))
-                    }
-                    None => return None,
-                },
-                "object" => match &item.additional_properties {
-                    Some(Item::Reference(ref_)) => {
-                        let schema = definitions.get(ref_)?;
-                        let ty = map_schema_type(schema, Some(ref_))?;
-                        RustType::Object(Box::new(ty))
-                    }
-                    Some(item) => {
-                        let ty = map_item_type(&item, true, definitions)?;
-                        RustType::Object(Box::new(ty))
-                    }
-                    None => {
-                        eprintln!("skipping, object has no additional props {:?}", item);
-                        return None;
-                    }
-                },
-                "number" => match item.format.as_deref() {
-                    Some("double") => RustType::F64,
-                    Some("float") => RustType::F32,
-                    _ => return None,
-                },
-                _ => return None,
-            };
-
-            if !is_required {
-                ty = RustType::Option(Box::new(ty));
-            }
-
-            Some(ty)
-        }
+        Item::Reference(ref_) => map_item_ref(ref_, definitions),
+        Item::Object(item) => map_item_object(item, is_required, definitions),
     }
 }
 
@@ -262,13 +288,17 @@ fn main() {
             description.lines().for_each(|line| println!("/// {line}"));
         }
 
-        println!("pub struct {name} {{");
-        let required = schema.required.clone().unwrap_or_default();
-
         if let Some(props) = &schema.properties {
+            println!("pub struct {name} {{");
+            let required = schema.required.clone().unwrap_or_default();
             props.0.iter().for_each(|(prop, item)| match item {
                 Item::Reference(ref_) => {
-                    eprintln!("skipping5 {ref_} for {prop}",);
+                    if let Some(ty) = definitions
+                        .get(ref_)
+                        .and_then(|schema| map_schema_type(schema, Some(ref_)))
+                    {
+                        println!("    {prop}: {ty},");
+                    }
                 }
                 it @ Item::Object(item) => {
                     if let Some(descr) = &item.description {
@@ -280,12 +310,14 @@ fn main() {
 
                     if let Some(ty) = map_item_type(it, is_required, &definitions) {
                         print!("{ty}");
+                    } else if item.type_.as_deref() == Some("object") {
                     }
                     println!(",");
                 }
             });
+            println!(" }}\n");
+        } else if let Some(ty) = map_schema_type(schema, None) {
+            println!("pub type {name} = {ty};\n");
         }
-
-        println!(" }}\n");
     }
 }
