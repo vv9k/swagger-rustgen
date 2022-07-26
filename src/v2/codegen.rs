@@ -99,7 +99,18 @@ impl CodeGenerator {
                 .as_ref()
                 .and_then(|format| RustType::from_integer_format(format))
                 .unwrap_or(RustType::USize),
-            "string" => RustType::String,
+            "string" => {
+                if item
+                    .format
+                    .as_ref()
+                    .map(|fmt| fmt == "date-time")
+                    .unwrap_or_default()
+                {
+                    RustType::DateTime
+                } else {
+                    RustType::String
+                }
+            }
             "boolean" => RustType::Bool,
             "array" => match &item.items {
                 Some(Item::Reference(ref_)) => {
@@ -153,7 +164,18 @@ impl CodeGenerator {
                 .as_ref()
                 .and_then(|format| RustType::from_integer_format(format))
                 .or(Some(RustType::USize)),
-            "string" => Some(RustType::String),
+            "string" => {
+                if schema
+                    .format
+                    .as_ref()
+                    .map(|fmt| fmt == "date-time")
+                    .unwrap_or_default()
+                {
+                    Some(RustType::DateTime)
+                } else {
+                    Some(RustType::String)
+                }
+            }
             "boolean" => Some(RustType::Bool),
             "array" => {
                 if let Some(ref_) = ref_ {
