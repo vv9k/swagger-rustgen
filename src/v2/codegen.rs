@@ -39,8 +39,6 @@ impl CodeGenerator {
             let mut definitions: Vec<_> = definitions.0.iter().collect();
             definitions.sort_unstable_by_key(|(k, _)| *k);
 
-            writeln!(writer, "// DEFINITIONS\n")?;
-
             for (name, schema) in definitions {
                 self.handle_schema(name, schema, writer)?;
             }
@@ -56,8 +54,6 @@ impl CodeGenerator {
         if let Some(responses) = &swagger.responses {
             let mut responses: Vec<_> = responses.0.iter().collect();
             responses.sort_unstable_by_key(|(k, _)| *k);
-
-            writeln!(writer, "\n\n// RESPONSES\n")?;
 
             for (name, response) in responses {
                 match response {
@@ -94,8 +90,6 @@ impl CodeGenerator {
         if let Some(paths) = &swagger.paths {
             let mut paths: Vec<_> = paths.0.iter().collect();
             paths.sort_unstable_by_key(|(k, _)| *k);
-
-            writeln!(writer, "\n\n// INLINE RESPONSES\n")?;
 
             macro_rules! handle_method {
                 ($path:ident, $method:ident) => {
