@@ -176,8 +176,13 @@ impl CodeGenerator {
                 .as_ref()
                 .and_then(|format| RustType::from_integer_format(format))
                 .unwrap_or(RustType::USize),
-            "string" => match item.format.as_deref() {
-                Some("date-time") => RustType::DateTime,
+            "string" => match item
+                .format
+                .as_ref()
+                .map(|fmt| fmt.to_lowercase())
+                .as_deref()
+            {
+                Some("date-time") | Some("datetime") | Some("date time") => RustType::DateTime,
                 Some("binary") => RustType::Vec(Box::new(RustType::U8)),
                 _ => RustType::String,
             },
@@ -234,8 +239,15 @@ impl CodeGenerator {
                 .as_ref()
                 .and_then(|format| RustType::from_integer_format(format))
                 .or(Some(RustType::USize)),
-            "string" => match schema.format.as_deref() {
-                Some("date-time") => Some(RustType::DateTime),
+            "string" => match schema
+                .format
+                .as_ref()
+                .map(|fmt| fmt.to_lowercase())
+                .as_deref()
+            {
+                Some("date-time") | Some("datetime") | Some("date time") => {
+                    Some(RustType::DateTime)
+                }
                 Some("binary") => Some(RustType::Vec(Box::new(RustType::U8))),
                 _ => Some(RustType::String),
             },
