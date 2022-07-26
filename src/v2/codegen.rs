@@ -1,5 +1,6 @@
 use crate::v2::{
     items::{Item, ItemsObject},
+    path::Path,
     responses::Response,
     schema::Schema,
     trim_reference, Swagger, DEFINITIONS_REF, RESPONSES_REF,
@@ -23,21 +24,40 @@ impl CodeGenerator {
     }
 
     pub fn generate_models(&mut self, mut writer: &mut impl std::io::Write) -> std::io::Result<()> {
-        writeln!(writer, "// DEFINITIONS\n")?;
         let swagger = self.swagger.clone();
+        self.generate_definitions_models(&swagger, &mut writer)?;
+        self.generate_responses_models(&swagger, &mut writer)?;
+        self.generate_inline_responses_models(&swagger, &mut writer)
+    }
+
+    fn generate_definitions_models(
+        &mut self,
+        swagger: &Swagger,
+        writer: &mut impl std::io::Write,
+    ) -> std::io::Result<()> {
         if let Some(definitions) = &swagger.definitions {
             let mut definitions: Vec<_> = definitions.0.iter().collect();
             definitions.sort_unstable_by_key(|(k, _)| *k);
 
+            writeln!(writer, "// DEFINITIONS\n")?;
+
             for (name, schema) in definitions {
-                self.handle_schema(name, schema, &mut writer)?;
+                self.handle_schema(name, schema, writer)?;
             }
         };
+        Ok(())
+    }
 
-        writeln!(writer, "\n\n// RESPONSES\n")?;
+    fn generate_responses_models(
+        &mut self,
+        swagger: &Swagger,
+        writer: &mut impl std::io::Write,
+    ) -> std::io::Result<()> {
         if let Some(responses) = &swagger.responses {
             let mut responses: Vec<_> = responses.0.iter().collect();
             responses.sort_unstable_by_key(|(k, _)| *k);
+
+            writeln!(writer, "\n\n// RESPONSES\n")?;
 
             for (name, response) in responses {
                 match response {
@@ -56,10 +76,67 @@ impl CodeGenerator {
                     Response::Object(response) => {
                         if let Some(schema) = &response.schema {
                             let mut schema = schema.clone();
-                            schema.description = Some(response.description.clone());
-                            self.handle_schema(name, &schema, &mut writer)?;
+                            schema.description = response.description.clone();
+                            self.handle_schema(name, &schema, writer)?;
                         }
                     }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn generate_inline_responses_models(
+        &mut self,
+        swagger: &Swagger,
+        writer: &mut impl std::io::Write,
+    ) -> std::io::Result<()> {
+        if let Some(paths) = &swagger.paths {
+            let mut paths: Vec<_> = paths.0.iter().collect();
+            paths.sort_unstable_by_key(|(k, _)| *k);
+
+            writeln!(writer, "\n\n// INLINE RESPONSES\n")?;
+
+            macro_rules! handle_method {
+                ($path:ident, $method:ident) => {
+                    if $path.$method.is_none() {
+                        continue;
+                    }
+                    let op = $path.$method.as_ref().unwrap();
+                    for (code, response) in &op.responses.0 {
+                        match response {
+                            Response::Object(response) => {
+                                if let Some(schema) = &response.schema {
+                                    let mut schema = schema.clone();
+                                    schema.description = response.description.clone();
+                                    self.handle_schema(
+                                        &format!(
+                                            "{}{code}Response",
+                                            op.operation_id.as_deref().unwrap_or("InlineResponse")
+                                        ),
+                                        &schema,
+                                        writer,
+                                    )?;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                };
+            }
+
+            for (_name, path) in paths {
+                match path {
+                    Path::Item(path) => {
+                        handle_method!(path, get);
+                        handle_method!(path, put);
+                        handle_method!(path, post);
+                        handle_method!(path, delete);
+                        handle_method!(path, options);
+                        handle_method!(path, head);
+                        handle_method!(path, patch);
+                    }
+                    Path::Extension(ext) => eprintln!("{:?}", ext),
                 }
             }
         }

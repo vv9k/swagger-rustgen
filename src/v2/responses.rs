@@ -11,7 +11,7 @@ pub enum Response {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ResponseObject {
-    pub description: String,
+    pub description: Option<String>,
     pub schema: Option<Schema>,
 }
 
