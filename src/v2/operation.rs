@@ -2,7 +2,7 @@ use crate::v2::responses::Responses;
 
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Operation {
     #[serde(default)]
     pub tags: Vec<String>,

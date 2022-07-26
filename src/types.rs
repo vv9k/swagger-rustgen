@@ -1,3 +1,5 @@
+use crate::name::format_type_name;
+
 use std::fmt;
 
 pub enum RustType {
@@ -19,7 +21,7 @@ pub enum RustType {
     Object(Box<RustType>),
     Option(Box<RustType>),
     Custom(String),
-    JsonValue,
+    Value,
 }
 
 impl fmt::Display for RustType {
@@ -43,8 +45,8 @@ impl fmt::Display for RustType {
             Vec(ty) => write!(f, "Vec<{ty}>"),
             Object(ty) => write!(f, "HashMap<String, {ty}>"),
             Option(ty) => write!(f, "Option<{ty}>"),
-            Custom(ty) => write!(f, "{ty}"),
-            JsonValue => write!(f, "serde_json::Value"),
+            Custom(ty) => write!(f, "{}", format_type_name(ty)),
+            Value => write!(f, "Value"),
         }
     }
 }

@@ -3,13 +3,13 @@ use crate::v2::{schema::Schema, Value};
 use serde::{de, Deserialize};
 use std::collections::HashMap;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Response {
     Reference(String),
     Object(Box<ResponseObject>),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ResponseObject {
     pub description: String,
     pub schema: Option<Schema>,
@@ -46,5 +46,5 @@ impl<'de> de::Deserialize<'de> for Response {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Responses(pub HashMap<String, Response>);

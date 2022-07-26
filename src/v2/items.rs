@@ -1,7 +1,7 @@
 use serde::{de, Deserialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ItemsObject {
     #[serde(rename = "type")]
     pub type_: Option<String>,
@@ -26,7 +26,7 @@ pub struct ItemsObject {
     pub x_go_package: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Item {
     Reference(String),
     Object(Box<ItemsObject>),
@@ -61,5 +61,5 @@ impl<'de> de::Deserialize<'de> for Item {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Items(pub HashMap<String, Item>);

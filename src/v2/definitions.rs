@@ -3,7 +3,7 @@ use crate::v2::{schema::Schema, DEFINITIONS_REF};
 use serde::Deserialize;
 use std::collections::HashMap;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Definitions(pub HashMap<String, Schema>);
 
 impl Definitions {

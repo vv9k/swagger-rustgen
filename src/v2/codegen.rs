@@ -2,22 +2,30 @@ use crate::v2::{
     items::{Item, ItemsObject},
     responses::Response,
     schema::Schema,
+    trim_reference, Swagger, DEFINITIONS_REF, RESPONSES_REF,
+};
+use crate::{
+    name::{format_type_name, format_var_name},
     types::RustType,
-    Swagger, DEFINITIONS_REF, RESPONSES_REF,
 };
 
 pub struct CodeGenerator {
     swagger: Swagger,
+    processed_types: Vec<String>,
 }
 
 impl CodeGenerator {
     pub fn new(swagger: Swagger) -> Self {
-        Self { swagger }
+        Self {
+            swagger,
+            processed_types: vec![],
+        }
     }
 
-    pub fn generate_models(&self, mut writer: &mut impl std::io::Write) -> std::io::Result<()> {
-        write!(writer, "/// DEFINITIONS ///\n\n\n")?;
-        if let Some(definitions) = &self.swagger.definitions {
+    pub fn generate_models(&mut self, mut writer: &mut impl std::io::Write) -> std::io::Result<()> {
+        writeln!(writer, "// DEFINITIONS\n")?;
+        let swagger = self.swagger.clone();
+        if let Some(definitions) = &swagger.definitions {
             let mut definitions: Vec<_> = definitions.0.iter().collect();
             definitions.sort_unstable_by_key(|(k, _)| *k);
 
@@ -26,8 +34,8 @@ impl CodeGenerator {
             }
         };
 
-        write!(writer, "\n\n\n/// RESPONSES ///\n\n\n")?;
-        if let Some(responses) = &self.swagger.responses {
+        writeln!(writer, "\n\n// RESPONSES\n")?;
+        if let Some(responses) = &swagger.responses {
             let mut responses: Vec<_> = responses.0.iter().collect();
             responses.sort_unstable_by_key(|(k, _)| *k);
 
@@ -35,13 +43,21 @@ impl CodeGenerator {
                 match response {
                     Response::Reference(ref_) => {
                         if let Some(ty) = self.map_reference(ref_) {
-                            writeln!(writer, "pub type {name} = {ty};\n")?;
+                            let type_name = format_type_name(name);
+                            if self.processed_types.contains(&type_name) {
+                                continue;
+                            } else {
+                                self.processed_types.push(type_name.clone());
+                            }
+
+                            writeln!(writer, "pub type {type_name} = {};\n", ty.to_string())?;
                         }
                     }
                     Response::Object(response) => {
-                        self.print_doc_comment(&response.description, None, &mut writer)?;
                         if let Some(schema) = &response.schema {
-                            self.handle_schema(name, schema, &mut writer)?;
+                            let mut schema = schema.clone();
+                            schema.description = Some(response.description.clone());
+                            self.handle_schema(name, &schema, &mut writer)?;
                         }
                     }
                 }
@@ -54,7 +70,7 @@ impl CodeGenerator {
         if ref_.starts_with(DEFINITIONS_REF) {
             if let Some(definitions) = &self.swagger.definitions {
                 let schema = definitions.get(ref_)?;
-                schema.map_type(Some(ref_))
+                self.map_schema_type(schema, Some(ref_))
             } else {
                 None
             }
@@ -62,7 +78,9 @@ impl CodeGenerator {
             if let Some(responses) = &self.swagger.responses {
                 let response = responses.0.get(ref_)?;
                 match response {
-                    Response::Object(response) => response.schema.as_ref()?.map_type(Some(ref_)),
+                    Response::Object(response) => {
+                        self.map_schema_type(response.schema.as_ref()?, Some(ref_))
+                    }
                     Response::Reference(ref_) => self.map_reference(ref_),
                 }
             } else {
@@ -103,7 +121,7 @@ impl CodeGenerator {
                     let ty = self.map_item_type(item, true)?;
                     RustType::Object(Box::new(ty))
                 }
-                None => RustType::Object(Box::new(RustType::JsonValue)),
+                None => RustType::Object(Box::new(RustType::Value)),
             },
             "number" => match item.format.as_deref() {
                 Some("double") => RustType::F64,
@@ -127,6 +145,56 @@ impl CodeGenerator {
         }
     }
 
+    fn map_schema_type(&self, schema: &Schema, ref_: Option<&str>) -> Option<RustType> {
+        let ty = schema.type_.as_deref()?;
+        match ty {
+            "integer" => schema
+                .format
+                .as_ref()
+                .and_then(|format| RustType::from_integer_format(format))
+                .or(Some(RustType::USize)),
+            "string" => Some(RustType::String),
+            "boolean" => Some(RustType::Bool),
+            "array" => {
+                if let Some(ref_) = ref_ {
+                    return Some(RustType::Vec(Box::new(RustType::Custom(
+                        trim_reference(ref_).to_string(),
+                    ))));
+                } else if let Some(item) = &schema.items {
+                    if let Some(ty) = self.map_item_type(item, true) {
+                        return Some(RustType::Vec(Box::new(ty)));
+                    }
+                }
+                None
+            }
+            "object" => {
+                if let Some(ref_) = ref_ {
+                    return Some(RustType::Custom(trim_reference(ref_).to_string()));
+                } else if let Some(item) = &schema.additional_properties {
+                    if let Some(ty) = self.map_item_type(item, true) {
+                        return Some(RustType::Object(Box::new(RustType::Option(Box::new(ty)))));
+                    }
+                } else if let Some(item) = &schema.items {
+                    if let Some(ty) = self.map_item_type(item, true) {
+                        return Some(RustType::Object(Box::new(ty)));
+                    }
+                } else {
+                    return Some(RustType::Value);
+                }
+                None
+            }
+            "number" => {
+                let ty = match schema.format.as_deref() {
+                    Some("double") => RustType::F64,
+                    Some("float") => RustType::F32,
+                    _ => return None,
+                };
+                Some(ty)
+            }
+            _ => None,
+        }
+    }
+
     fn print_doc_comment(
         &self,
         comment: impl AsRef<str>,
@@ -143,46 +211,99 @@ impl CodeGenerator {
     }
 
     fn handle_schema(
-        &self,
+        &mut self,
         name: &str,
         schema: &Schema,
         writer: &mut impl std::io::Write,
     ) -> std::io::Result<()> {
-        if let Some(description) = &schema.description {
-            self.print_doc_comment(description, None, writer)?;
-        }
-
         if let Some(props) = &schema.properties {
-            writeln!(writer, "pub struct {name} {{")?;
+            let type_name = format_type_name(name);
+
+            if self.processed_types.contains(&type_name) {
+                return Ok(());
+            } else {
+                self.processed_types.push(type_name.clone());
+            }
+
+            writeln!(
+                writer,
+                "#[derive(Debug, Clone, Deserialize, PartialEq, Serialize, Deserialize)]"
+            )?;
+            if let Some(description) = &schema.description {
+                self.print_doc_comment(description, None, writer)?;
+            }
+
+            writeln!(writer, "pub struct {} {{", type_name)?;
             let required = schema.required.clone().unwrap_or_default();
-            for (prop, item) in &props.0 {
+            let mut props: Vec<_> = props.0.iter().collect();
+            props.sort_unstable_by_key(|(k, _)| *k);
+            for (prop, item) in props {
                 match item {
                     Item::Reference(ref_) => {
-                        if let Some(ty) = self.map_reference(ref_) {
-                            writeln!(writer, "    {prop}: {ty},")?;
+                        let ty = if let Some(ty) = self.map_reference(ref_) {
+                            ty
+                        } else {
+                            RustType::Option(Box::new(RustType::Value))
+                        };
+                        let formatted_var = format_var_name(prop);
+                        if &formatted_var != prop {
+                            writeln!(writer, "    #[serde(rename = \"{prop}\")]")?;
                         }
+                        writeln!(writer, "    {formatted_var}: {ty},")?;
                     }
                     it @ Item::Object(item) => {
+                        let formatted_var = format_var_name(prop);
+                        let is_required = required.contains(prop);
+
+                        let ty = if let Some(ty) = self.map_item_type(it, is_required) {
+                            ty
+                        } else {
+                            RustType::Option(Box::new(RustType::Value))
+                        };
+
+                        if &formatted_var != prop {
+                            writeln!(writer, "    #[serde(rename = \"{prop}\")]")?;
+                        }
+
+                        if matches!(ty, RustType::Vec(_) | RustType::Object(_)) {
+                            writeln!(writer, "    #[serde(default)]")?;
+                        }
+
+                        if !is_required {
+                            writeln!(
+                                writer,
+                                "    #[serde(skip_serializing_if = \"Option::is_none\")]"
+                            )?;
+                        }
+
                         if let Some(descr) = &item.description {
                             self.print_doc_comment(descr, Some(4), writer)?;
                         }
-                        write!(writer, "    {prop}: ")?;
 
-                        let is_required = required.contains(prop);
-
-                        if let Some(ty) = self.map_item_type(it, is_required) {
-                            write!(writer, "{ty}")?;
-                        } else if item.type_.as_deref() == Some("object") {
-                        }
-                        writeln!(writer, ",")?;
+                        writeln!(writer, "    {formatted_var}: {ty},")?;
                     }
                 }
             }
             writeln!(writer, "}}\n")?;
-        } else if let Some(ty) = schema.map_type(None) {
-            writeln!(writer, "pub type {name} = {ty};\n")?;
+        } else if let Some(ty) = self.map_schema_type(schema, None) {
+            let type_name = format_type_name(name);
+
+            if self.processed_types.contains(&type_name) {
+                return Ok(());
+            } else {
+                self.processed_types.push(type_name.clone());
+            }
+
+            if let Some(description) = &schema.description {
+                self.print_doc_comment(description, None, writer)?;
+            }
+
+            writeln!(writer, "pub type {type_name} = {};\n", ty.to_string())?;
         } else if let Some(ref_) = schema.ref_.as_deref() {
             let _ty = self.map_reference(ref_);
+            //eprintln!("else if {}", _ty.unwrap_or(RustType::Bool));
+        } else {
+            //eprintln!("else {:?}", schema);
         }
 
         Ok(())

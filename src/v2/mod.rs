@@ -5,7 +5,6 @@ pub mod operation;
 pub mod path;
 pub mod responses;
 pub mod schema;
-pub mod types;
 
 pub const DEFINITIONS_REF: &str = "#/definitions/";
 pub const RESPONSES_REF: &str = "#/responses/";
@@ -19,7 +18,7 @@ fn trim_reference(ref_: &str) -> &str {
         .trim_start_matches(RESPONSES_REF)
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Swagger {
     pub swagger: String,
     pub definitions: Option<definitions::Definitions>,

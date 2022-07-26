@@ -3,7 +3,7 @@ use crate::v2::{operation::Operation, Value};
 use serde::{de, Deserialize};
 use std::collections::HashMap;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Path {
     Item(Box<PathItemObject>),
     Extension(serde_yaml::Value),
@@ -45,7 +45,7 @@ impl<'de> de::Deserialize<'de> for Paths {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct PathItemObject {
     #[serde(rename = "$ref")]
     pub ref_: Option<String>,
@@ -58,5 +58,5 @@ pub struct PathItemObject {
     pub patch: Option<Operation>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Paths(pub HashMap<String, Path>);
