@@ -92,43 +92,45 @@ impl CodeGenerator {
             paths.sort_unstable_by_key(|(k, _)| *k);
 
             macro_rules! handle_method {
-                ($path:ident, $method:ident) => {
-                    if $path.$method.is_none() {
-                        continue;
-                    }
-                    let op = $path.$method.as_ref().unwrap();
-                    for (code, response) in &op.responses.0 {
-                        match response {
-                            Response::Object(response) => {
-                                if let Some(schema) = &response.schema {
-                                    let mut schema = schema.clone();
-                                    schema.description = response.description.clone();
-                                    self.handle_schema(
-                                        &format!(
-                                            "{}{code}Response",
-                                            op.operation_id.as_deref().unwrap_or("InlineResponse")
-                                        ),
-                                        &schema,
-                                        writer,
-                                    )?;
+                ($path:ident, $method:ident, $name:ident) => {
+                    if let Some(op) = $path.$method.as_ref() {
+                        for (code, response) in &op.responses.0 {
+                            eprintln!("handling {code} for {:?}", $name);
+                            match response {
+                                Response::Object(response) => {
+                                    if let Some(schema) = &response.schema {
+                                        let mut schema = schema.clone();
+                                        schema.description = response.description.clone();
+                                        self.handle_schema(
+                                            &format!(
+                                                "{}{code}Response",
+                                                op.operation_id
+                                                    .as_deref()
+                                                    .unwrap_or("InlineResponse")
+                                            ),
+                                            &schema,
+                                            writer,
+                                        )?;
+                                    }
                                 }
+                                _ => {}
                             }
-                            _ => {}
                         }
                     }
                 };
             }
 
-            for (_name, path) in paths {
+            for (name, path) in paths {
+                eprintln!("handling {name} for {:#?}", path);
                 match path {
                     Path::Item(path) => {
-                        handle_method!(path, get);
-                        handle_method!(path, put);
-                        handle_method!(path, post);
-                        handle_method!(path, delete);
-                        handle_method!(path, options);
-                        handle_method!(path, head);
-                        handle_method!(path, patch);
+                        handle_method!(path, get, name);
+                        handle_method!(path, put, name);
+                        handle_method!(path, post, name);
+                        handle_method!(path, delete, name);
+                        handle_method!(path, options, name);
+                        handle_method!(path, head, name);
+                        handle_method!(path, patch, name);
                     }
                     Path::Extension(ext) => eprintln!("{:?}", ext),
                 }
