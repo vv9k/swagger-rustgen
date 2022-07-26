@@ -11,3 +11,4 @@ name = "swagger-rustgen"
 serde_yaml = "0.8"
 serde = { version = "1", features = ["derive"] }
 convert_case = "0.5"
+clap = { version = "3", features = ["derive"] }
