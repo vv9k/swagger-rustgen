@@ -340,7 +340,7 @@ impl CodeGenerator {
                         if &formatted_var != prop {
                             writeln!(writer, "    #[serde(rename = \"{prop}\")]")?;
                         }
-                        writeln!(writer, "    {formatted_var}: {ty},")?;
+                        writeln!(writer, "    pub {formatted_var}: {ty},")?;
                     }
                     it @ Item::Object(item) => {
                         let formatted_var = format_var_name(prop);
@@ -371,7 +371,7 @@ impl CodeGenerator {
                             self.print_doc_comment(descr, Some(4), writer)?;
                         }
 
-                        writeln!(writer, "    {formatted_var}: {ty},")?;
+                        writeln!(writer, "    pub {formatted_var}: {ty},")?;
                     }
                 }
             }
