@@ -1,4 +1,4 @@
-use crate::{items::Items, trim_reference, types::RustType, Value};
+use crate::v2::{items::Items, trim_reference, types::RustType, Value};
 
 use serde::Deserialize;
 

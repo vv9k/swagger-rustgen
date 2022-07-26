@@ -1,4 +1,4 @@
-use crate::{operation::Operation, Value};
+use crate::v2::{operation::Operation, Value};
 
 use serde::{de, Deserialize};
 use std::collections::HashMap;

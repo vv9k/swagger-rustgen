@@ -1,4 +1,4 @@
-use crate::responses::Responses;
+use crate::v2::responses::Responses;
 
 use serde::Deserialize;
 

@@ -1,6 +1,6 @@
 // https://swagger.io/specification/v2/#definitionsObject
 
-use swagger_rustgen::{codegen::CodeGenerator, Swagger};
+use swagger_rustgen::v2::{codegen::CodeGenerator, Swagger};
 
 fn main() {
     let yaml = std::fs::read_to_string("/home/wojtek/Downloads/swagger-v4.2.yaml").unwrap();

@@ -1,4 +1,4 @@
-use crate::{schema::Schema, DEFINITIONS_REF};
+use crate::v2::{schema::Schema, DEFINITIONS_REF};
 
 use serde::Deserialize;
 use std::collections::HashMap;

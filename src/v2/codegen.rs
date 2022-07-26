@@ -1,4 +1,4 @@
-use crate::{
+use crate::v2::{
     items::{Item, ItemsObject},
     responses::Response,
     schema::Schema,
