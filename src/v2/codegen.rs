@@ -318,7 +318,7 @@ impl CodeGenerator {
 
             writeln!(
                 writer,
-                "#[derive(Debug, Clone, Deserialize, PartialEq, Serialize, Deserialize)]"
+                "#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]"
             )?;
             if let Some(description) = &schema.description {
                 self.print_doc_comment(description, None, writer)?;
