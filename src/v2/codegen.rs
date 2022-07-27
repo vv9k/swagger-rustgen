@@ -1,5 +1,5 @@
 use crate::v2::{
-    items::{Item, ItemsObject},
+    items::{Item, Items, ItemsObject},
     path::Path,
     responses::Response,
     schema::Schema,
@@ -390,8 +390,26 @@ impl CodeGenerator {
         } else if let Some(ref_) = schema.ref_.as_deref() {
             let _ty = self.map_reference(ref_);
             //eprintln!("else if {}", _ty.unwrap_or(RustType::Bool));
+        } else if let Some(all_of) = &schema.all_of {
+            let base_schema = Schema {
+                description: schema.description.clone(),
+                title: schema.title.clone(),
+                properties: Some(Items::default()),
+                ..Default::default()
+            };
+            let schema = all_of.into_iter().fold(base_schema, |mut acc, schema| {
+                if let Some(props) = &mut acc.properties {
+                    if let Some(new_props) = &schema.properties {
+                        props
+                            .0
+                            .extend(new_props.0.iter().map(|(k, v)| (k.clone(), v.clone())));
+                    }
+                }
+                acc
+            });
+            return self.handle_schema(name, &schema, writer);
         } else {
-            //eprintln!("else {:?}", schema);
+            eprintln!("else {:?}", schema);
         }
 
         Ok(())

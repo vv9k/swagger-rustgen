@@ -61,5 +61,5 @@ impl<'de> de::Deserialize<'de> for Item {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Default, Clone, Deserialize)]
 pub struct Items(pub HashMap<String, Item>);

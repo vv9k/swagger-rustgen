@@ -5,7 +5,7 @@ use crate::v2::{
 
 use serde::Deserialize;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Default, Clone, Deserialize)]
 pub struct Schema {
     #[serde(rename = "$ref")]
     pub ref_: Option<String>,
@@ -21,6 +21,9 @@ pub struct Schema {
     pub additional_properties: Option<Item>,
     #[serde(rename = "enum")]
     pub enum_: Option<Vec<Value>>,
+
+    #[serde(rename = "allOf")]
+    pub all_of: Option<Vec<Schema>>,
 
     // Extensions
     #[serde(rename = "x-go-name")]
