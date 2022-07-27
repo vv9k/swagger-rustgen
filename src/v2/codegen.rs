@@ -307,9 +307,8 @@ impl CodeGenerator {
         schema: &Schema,
         writer: &mut impl std::io::Write,
     ) -> std::io::Result<()> {
+        let type_name = format_type_name(schema.title.as_deref().unwrap_or(name));
         if let Some(props) = &schema.properties {
-            let type_name = format_type_name(name);
-
             if self.processed_types.contains(&type_name) {
                 return Ok(());
             } else {
@@ -377,8 +376,6 @@ impl CodeGenerator {
             }
             writeln!(writer, "}}\n")?;
         } else if let Some(ty) = self.map_schema_type(schema, None) {
-            let type_name = format_type_name(name);
-
             if self.processed_types.contains(&type_name) {
                 return Ok(());
             } else {
