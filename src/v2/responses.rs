@@ -46,5 +46,33 @@ impl<'de> de::Deserialize<'de> for Response {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Responses(pub HashMap<String, Response>);
+
+impl<'de> de::Deserialize<'de> for Responses {
+    fn deserialize<D>(deserializer: D) -> Result<Responses, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        let v: Value = de::Deserialize::deserialize(deserializer)?;
+
+        let mut responses = HashMap::new();
+        match v {
+            Value::Mapping(map) => {
+                for (key, val) in map {
+                    let k = match key {
+                        Value::String(k) => k,
+                        Value::Number(n) => n.to_string(),
+                        _ => return Err(de::Error::custom("invalid responses key type")),
+                    };
+                    let val: Response = serde_yaml::from_value(val)
+                        .map_err(|e| de::Error::custom(e.to_string()))?;
+                    responses.insert(k, val);
+                }
+
+                Ok(Responses(responses))
+            }
+            _ => Err(de::Error::custom("invalid type for responses object")),
+        }
+    }
+}
