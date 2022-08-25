@@ -2,6 +2,7 @@ use crate::name::format_type_name;
 
 use std::fmt;
 
+#[derive(Clone)]
 pub enum RustType {
     I8,
     U8,
