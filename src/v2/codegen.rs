@@ -1,5 +1,5 @@
 use crate::v2::{
-    items::{Item, Items, ItemsObject},
+    items::{Item, Items},
     path::Path,
     responses::Response,
     schema::Schema,
@@ -58,7 +58,7 @@ impl CodeGenerator {
             for (name, response) in responses {
                 match response {
                     Response::Reference(ref_) => {
-                        if let Some(ty) = self.map_reference(ref_) {
+                        if let Some(ty) = self.map_reference(ref_, true, Some(name)) {
                             let type_name = format_type_name(name);
                             if self.processed_types.contains(&type_name) {
                                 continue;
@@ -137,11 +137,16 @@ impl CodeGenerator {
         Ok(())
     }
 
-    fn map_reference(&self, ref_: &str) -> Option<RustType> {
+    fn map_reference(
+        &self,
+        ref_: &str,
+        is_required: bool,
+        parent_name: Option<&str>,
+    ) -> Option<RustType> {
         if ref_.starts_with(DEFINITIONS_REF) {
             if let Some(definitions) = &self.swagger.definitions {
                 let schema = definitions.get(ref_)?;
-                self.map_schema_type(schema, Some(ref_))
+                self.map_schema_type(schema, Some(ref_), is_required, parent_name)
             } else {
                 None
             }
@@ -149,10 +154,13 @@ impl CodeGenerator {
             if let Some(responses) = &self.swagger.responses {
                 let response = responses.0.get(ref_)?;
                 match response {
-                    Response::Object(response) => {
-                        self.map_schema_type(response.schema.as_ref()?, Some(ref_))
-                    }
-                    Response::Reference(ref_) => self.map_reference(ref_),
+                    Response::Object(response) => self.map_schema_type(
+                        response.schema.as_ref()?,
+                        Some(ref_),
+                        is_required,
+                        parent_name,
+                    ),
+                    Response::Reference(ref_) => self.map_reference(ref_, is_required, parent_name),
                 }
             } else {
                 None
@@ -162,15 +170,33 @@ impl CodeGenerator {
         }
     }
 
-    fn map_item_object(&self, item: &ItemsObject, is_required: bool) -> Option<RustType> {
-        let ty = item.type_.as_deref()?;
+    fn map_item_type(
+        &self,
+        item: &Item,
+        is_required: bool,
+        parent_name: Option<&str>,
+    ) -> Option<RustType> {
+        match item {
+            Item::Reference(ref_) => self.map_reference(ref_, is_required, parent_name),
+            Item::Object(item) => self.map_schema_type(item, None, is_required, parent_name),
+        }
+    }
+
+    fn map_schema_type(
+        &self,
+        schema: &Schema,
+        ref_: Option<&str>,
+        is_required: bool,
+        parent_name: Option<&str>,
+    ) -> Option<RustType> {
+        let ty = schema.type_.as_deref()?;
         let mut ty = match ty {
-            "integer" => item
+            "integer" => schema
                 .format
                 .as_ref()
                 .and_then(|format| RustType::from_integer_format(format))
                 .unwrap_or(RustType::USize),
-            "string" => match item
+            "string" => match schema
                 .format
                 .as_ref()
                 .map(|fmt| fmt.to_lowercase())
@@ -181,98 +207,52 @@ impl CodeGenerator {
                 _ => RustType::String,
             },
             "boolean" => RustType::Bool,
-            "array" => match &item.items {
-                Some(Item::Reference(ref_)) => {
-                    let ty = self.map_reference(ref_)?;
-                    RustType::Vec(Box::new(ty))
-                }
-                Some(item) => {
-                    let ty = self.map_item_type(item, true)?;
-                    RustType::Vec(Box::new(ty))
-                }
-                None => return None,
-            },
-            "object" => match &item.additional_properties {
-                Some(Item::Reference(ref_)) => {
-                    let ty = self.map_reference(ref_)?;
-                    RustType::Object(Box::new(ty))
-                }
-                Some(item) => {
-                    let ty = self.map_item_type(item, true)?;
-                    RustType::Object(Box::new(ty))
-                }
-                None => RustType::Object(Box::new(RustType::Value)),
-            },
-            "number" => match item.format.as_deref() {
-                Some("double") => RustType::F64,
-                Some("float") => RustType::F32,
-                _ => return None,
-            },
-            _ => return None,
-        };
-
-        if !is_required {
-            ty = RustType::Option(Box::new(ty));
-        }
-
-        Some(ty)
-    }
-
-    fn map_item_type(&self, item: &Item, is_required: bool) -> Option<RustType> {
-        match item {
-            Item::Reference(ref_) => self.map_reference(ref_),
-            Item::Object(item) => self.map_item_object(item, is_required),
-        }
-    }
-
-    fn map_schema_type(&self, schema: &Schema, ref_: Option<&str>) -> Option<RustType> {
-        let ty = schema.type_.as_deref()?;
-        match ty {
-            "integer" => schema
-                .format
-                .as_ref()
-                .and_then(|format| RustType::from_integer_format(format))
-                .or(Some(RustType::USize)),
-            "string" => match schema
-                .format
-                .as_ref()
-                .map(|fmt| fmt.to_lowercase())
-                .as_deref()
-            {
-                Some("date-time") | Some("datetime") | Some("date time") => {
-                    Some(RustType::DateTime)
-                }
-                Some("binary") => Some(RustType::Vec(Box::new(RustType::U8))),
-                _ => Some(RustType::String),
-            },
-            "boolean" => Some(RustType::Bool),
             "array" => {
-                if let Some(ref_) = ref_ {
-                    return Some(RustType::Vec(Box::new(RustType::Custom(
-                        trim_reference(ref_).to_string(),
-                    ))));
+                let ty = if let Some(ref_) = ref_ {
+                    RustType::Vec(Box::new(RustType::Custom(trim_reference(ref_).to_string())))
                 } else if let Some(item) = &schema.items {
-                    if let Some(ty) = self.map_item_type(item, true) {
-                        return Some(RustType::Vec(Box::new(ty)));
-                    }
-                }
-                None
-            }
-            "object" => {
-                if let Some(ref_) = ref_ {
-                    return Some(RustType::Custom(trim_reference(ref_).to_string()));
-                } else if let Some(item) = &schema.additional_properties {
-                    if let Some(ty) = self.map_item_type(item, true) {
-                        return Some(RustType::Object(Box::new(RustType::Option(Box::new(ty)))));
-                    }
-                } else if let Some(item) = &schema.items {
-                    if let Some(ty) = self.map_item_type(item, true) {
-                        return Some(RustType::Object(Box::new(ty)));
+                    if let Some(ty) = self.map_item_type(item, true, parent_name) {
+                        RustType::Vec(Box::new(ty))
+                    } else {
+                        return None;
                     }
                 } else {
-                    return Some(RustType::Value);
-                }
-                None
+                    return None;
+                };
+
+                ty
+            }
+            "object" => {
+                let ty = if let Some(ref_) = ref_ {
+                    RustType::Custom(trim_reference(ref_).to_string())
+                } else if let Some(item) = &schema.additional_properties {
+                    if let Some(ty) = self.map_item_type(item, true, parent_name) {
+                        RustType::Object(Box::new(RustType::Option(Box::new(ty))))
+                    } else {
+                        return None;
+                    }
+                } else if let Some(item) = &schema.items {
+                    if let Some(ty) = self.map_item_type(item, true, parent_name) {
+                        RustType::Object(Box::new(ty))
+                    } else {
+                        return None;
+                    }
+                } else if schema.properties.is_some() {
+                    if let Some(title) = &schema.x_go_name {
+                        RustType::Custom(title.to_string())
+                    } else if let Some(title) = &schema.title {
+                        RustType::Custom(title.to_string())
+                    } else if let Some(title) = parent_name {
+                        RustType::Custom(title.to_string())
+                    } else {
+                        RustType::Value
+                    }
+                } else {
+                    eprintln!("else value {:#?}", schema);
+                    RustType::Value
+                };
+
+                ty
             }
             "number" => {
                 let ty = match schema.format.as_deref() {
@@ -280,10 +260,14 @@ impl CodeGenerator {
                     Some("float") => RustType::F32,
                     _ => return None,
                 };
-                Some(ty)
+                ty
             }
-            _ => None,
+            _ => return None,
+        };
+        if !is_required {
+            ty = RustType::Option(Box::new(ty));
         }
+        Some(ty)
     }
 
     fn print_doc_comment(
@@ -327,31 +311,32 @@ impl CodeGenerator {
             let required = schema.required.clone().unwrap_or_default();
             let mut props: Vec<_> = props.0.iter().collect();
             props.sort_unstable_by_key(|(k, _)| *k);
-            for (prop, item) in props {
+            for (prop, item) in &props {
+                let is_required = required.contains(prop);
                 match item {
                     Item::Reference(ref_) => {
-                        let ty = if let Some(ty) = self.map_reference(ref_) {
+                        let ty = if let Some(ty) = self.map_reference(ref_, is_required, Some(prop))
+                        {
                             ty
                         } else {
                             RustType::Option(Box::new(RustType::Value))
                         };
                         let formatted_var = format_var_name(prop);
-                        if &formatted_var != prop {
+                        if &&formatted_var != prop {
                             writeln!(writer, "    #[serde(rename = \"{prop}\")]")?;
                         }
                         writeln!(writer, "    pub {formatted_var}: {ty},")?;
                     }
                     it @ Item::Object(item) => {
                         let formatted_var = format_var_name(prop);
-                        let is_required = required.contains(prop);
 
-                        let ty = if let Some(ty) = self.map_item_type(it, is_required) {
+                        let ty = if let Some(ty) = self.map_item_type(it, is_required, Some(prop)) {
                             ty
                         } else {
                             RustType::Option(Box::new(RustType::Value))
                         };
 
-                        if &formatted_var != prop {
+                        if &&formatted_var != prop {
                             writeln!(writer, "    #[serde(rename = \"{prop}\")]")?;
                         }
 
@@ -375,7 +360,16 @@ impl CodeGenerator {
                 }
             }
             writeln!(writer, "}}\n")?;
-        } else if let Some(ty) = self.map_schema_type(schema, None) {
+
+            //for (prop, schema) in props {
+            //match schema {
+            //Item::Object(schema) if schema.properties.is_some() => {
+            //self.handle_schema(prop, schema, writer)?;
+            //}
+            //_ => {}
+            //}
+            //}
+        } else if let Some(ty) = self.map_schema_type(schema, None, true, Some(name)) {
             if self.processed_types.contains(&type_name) {
                 return Ok(());
             } else {
@@ -388,7 +382,7 @@ impl CodeGenerator {
 
             writeln!(writer, "pub type {type_name} = {};\n", ty.to_string())?;
         } else if let Some(ref_) = schema.ref_.as_deref() {
-            let _ty = self.map_reference(ref_);
+            let _ty = self.map_reference(ref_, true, Some(name));
             //eprintln!("else if {}", _ty.unwrap_or(RustType::Bool));
         } else if let Some(all_of) = &schema.all_of {
             let base_schema = Schema {
