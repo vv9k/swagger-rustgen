@@ -88,4 +88,8 @@ impl Schema {
     pub fn is_object(&self) -> bool {
         self.is_of_type("object")
     }
+
+    pub fn is_array(&self) -> bool {
+        self.is_of_type("array")
+    }
 }

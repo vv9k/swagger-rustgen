@@ -183,7 +183,7 @@ impl CodeGenerator {
                 match response {
                     Response::Object(response) => self.map_schema_type(
                         response.schema.as_ref()?,
-                        Some(ref_),
+                        Some(ref_.trim_start_matches(RESPONSES_REF)),
                         is_required,
                         parent_name,
                     ),
@@ -236,7 +236,7 @@ impl CodeGenerator {
             "boolean" => RustType::Bool,
             "array" => {
                 let ty = if let Some(ref_) = ref_ {
-                    RustType::Vec(Box::new(RustType::Custom(trim_reference(ref_).to_string())))
+                    RustType::Custom(trim_reference(ref_).to_string())
                 } else if let Some(item) = &schema.items {
                     if let Some(ty) = self.map_item_type(item, true, parent_name) {
                         RustType::Vec(Box::new(ty))
@@ -338,13 +338,8 @@ impl CodeGenerator {
 
             self.processed_types.push(type_name.clone());
 
-            writeln!(
-                writer,
-                "#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]"
-            )?;
-            if let Some(description) = &schema.description {
-                self.print_doc_comment(description, None, writer)?;
-            }
+            self.print_derives(&schema, writer)?;
+            self.print_description(&schema, writer)?;
 
             writeln!(writer, "pub struct {} {{", type_name)?;
             let mut props: Vec<_> = props.0.iter().collect();
@@ -413,8 +408,13 @@ impl CodeGenerator {
         } else if schema.all_of.is_some() {
             let merged = schema.clone().merge_all_of_schema();
             return self.handle_schema(&name, None, &merged, writer);
+        } else if schema.is_array() {
+            self.handle_array_schema(&name, schema, writer)?
+        } else if let Some(ref_) = schema.ref_.as_deref() {
+            let _ty = self.map_reference(ref_, true, Some(&name));
+            //eprintln!("else if {}", _ty.unwrap_or(RustType::Bool));
         } else if let Some(ty) = self.map_schema_type(schema, None, true, Some(&name)) {
-            if self.processed_types.contains(&type_name) {
+            if self.was_processed(&type_name) {
                 return Ok(());
             } else {
                 self.processed_types.push(type_name.clone());
@@ -425,13 +425,62 @@ impl CodeGenerator {
             }
 
             writeln!(writer, "pub type {type_name} = {};\n", ty.to_string())?;
-        } else if let Some(ref_) = schema.ref_.as_deref() {
-            let _ty = self.map_reference(ref_, true, Some(&name));
-            //eprintln!("else if {}", _ty.unwrap_or(RustType::Bool));
         } else {
             eprintln!("else {:?}", schema);
         }
 
         Ok(())
+    }
+
+    fn handle_array_schema(
+        &mut self,
+        name: &str,
+        schema: &Schema,
+        writer: &mut impl std::io::Write,
+    ) -> std::io::Result<()> {
+        if let Some(item) = &schema.items {
+            let ty = self.map_item_type(&item, true, Some(&name));
+            if ty.is_none() {
+                return Ok(());
+            }
+            let ty = ty.unwrap();
+            let item_type_name = format!("{}Item", format_type_name(ty.to_string().as_str()));
+            let ty = RustType::Vec(Box::new(ty));
+            self.print_derives(&schema, writer)?;
+            self.print_description(&schema, writer)?;
+            writeln!(writer, "pub type {} = {ty};\n", format_type_name(name))?;
+            if let Item::Object(item) = item {
+                if !self.was_processed(&item_type_name) {
+                    self.handle_schema(&item_type_name, Some(name), &item, writer)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn print_derives(
+        &self,
+        _schema: &Schema,
+        writer: &mut impl std::io::Write,
+    ) -> std::io::Result<()> {
+        const DEFAULT_DERIVES: &str = "#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]";
+        writeln!(writer, "{DEFAULT_DERIVES}")
+    }
+
+    fn print_description(
+        &self,
+        schema: &Schema,
+        writer: &mut impl std::io::Write,
+    ) -> std::io::Result<()> {
+        if let Some(description) = &schema.description {
+            self.print_doc_comment(description, None, writer)?;
+        }
+        Ok(())
+    }
+
+    fn was_processed(&mut self, type_: impl AsRef<str>) -> bool {
+        let type_ = type_.as_ref();
+        let res = self.processed_types.iter().any(|ty| ty == type_);
+        res
     }
 }
