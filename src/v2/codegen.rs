@@ -374,21 +374,6 @@ impl CodeGenerator {
         Some(ty)
     }
 
-    fn print_doc_comment(
-        &self,
-        comment: impl AsRef<str>,
-        indentation: Option<u8>,
-        writer: &mut impl std::io::Write,
-    ) -> std::io::Result<()> {
-        let indentation = indentation
-            .map(|i| " ".repeat(i.into()))
-            .unwrap_or_default();
-        for line in comment.as_ref().lines() {
-            writeln!(writer, "{indentation}/// {line}")?;
-        }
-        Ok(())
-    }
-
     fn handle_schema(
         &mut self,
         name: &str,
@@ -552,6 +537,21 @@ impl CodeGenerator {
     ) -> std::io::Result<()> {
         if let Some(description) = &schema.description {
             self.print_doc_comment(description, None, writer)?;
+        }
+        Ok(())
+    }
+
+    fn print_doc_comment(
+        &self,
+        comment: impl AsRef<str>,
+        indentation: Option<u8>,
+        writer: &mut impl std::io::Write,
+    ) -> std::io::Result<()> {
+        let indentation = indentation
+            .map(|i| " ".repeat(i.into()))
+            .unwrap_or_default();
+        for line in comment.as_ref().lines() {
+            writeln!(writer, "{indentation}/// {line}")?;
         }
         Ok(())
     }
