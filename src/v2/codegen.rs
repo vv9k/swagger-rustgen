@@ -7,6 +7,7 @@ use crate::{
     types::RustType,
 };
 
+use log::{debug, error, trace};
 use std::cmp::Ordering;
 
 #[derive(Debug)]
@@ -80,11 +81,13 @@ impl CodeGenerator {
         parent_name: Option<String>,
         ref_: String,
     ) {
-        self.models_to_generate.push(ModelPrototype {
+        let prototype = ModelPrototype {
             name: name.into(),
             parent_name,
             schema: Item::Reference(ref_),
-        });
+        };
+        trace!("adding reference {prototype:?}");
+        self.models_to_generate.push(prototype);
     }
 
     fn add_schema_prototype(
@@ -94,6 +97,7 @@ impl CodeGenerator {
         schema: &Schema,
     ) {
         let name = name.into();
+        trace!("adding schema prototype `{name}`");
         if let Some(ref_) = &schema.ref_ {
             self.add_ref_prototype(name, parent_name, ref_.to_string());
             return;
@@ -103,6 +107,7 @@ impl CodeGenerator {
             match items {
                 Item::Object(child_schema) => {
                     if child_schema.is_object() {
+                        trace!("handling child schema {child_schema:?}");
                         self.add_schema_prototype("", Some(name.clone()), &child_schema)
                     }
                 }
@@ -112,6 +117,7 @@ impl CodeGenerator {
 
         if let Some(props) = &schema.properties {
             for (prop_name, prop_schema) in props.0.iter() {
+                trace!("handling property {prop_name}");
                 match prop_schema {
                     Item::Object(prop_schema) => {
                         if prop_schema.is_object() && prop_schema.properties.is_some() {
@@ -124,27 +130,37 @@ impl CodeGenerator {
             }
         }
 
-        self.models_to_generate.push(ModelPrototype {
+        let prototype = ModelPrototype {
             name: name.into(),
             parent_name,
             schema: Item::Object(Box::new(schema.clone())),
-        });
+        };
+        trace!("adding object {prototype:?}");
+        self.models_to_generate.push(prototype);
     }
 
     fn add_definition_models(&mut self, swagger: &Swagger) {
+        debug!("adding definition models");
         if let Some(definitions) = &swagger.definitions {
+            trace!("definitions found");
             let mut definitions: Vec<_> = definitions.0.iter().collect();
+            trace!("sorting definitions alphabetically by name");
             definitions.sort_unstable_by_key(|(k, _)| *k);
 
             for (name, schema) in definitions {
                 self.add_schema_prototype(name, None, schema);
             }
-        };
+        } else {
+            trace!("no definitions to process");
+        }
     }
 
     fn add_responses_models(&mut self, swagger: &Swagger) {
+        debug!("adding responses models");
         if let Some(responses) = &swagger.responses {
+            trace!("responses found");
             let mut responses: Vec<_> = responses.0.iter().collect();
+            trace!("sorting responses alphabetically by name");
             responses.sort_unstable_by_key(|(k, _)| *k);
 
             for (name, response) in responses {
@@ -161,12 +177,17 @@ impl CodeGenerator {
                     }
                 }
             }
+        } else {
+            trace!("no responses to process");
         }
     }
 
     fn add_paths_models(&mut self, swagger: &Swagger) {
+        debug!("adding paths models");
         if let Some(paths) = &swagger.paths {
+            debug!("paths found");
             let mut paths: Vec<_> = paths.0.iter().collect();
+            trace!("sorting paths alphabetically by name");
             paths.sort_unstable_by_key(|(k, _)| *k);
 
             macro_rules! handle_method {
@@ -211,10 +232,13 @@ impl CodeGenerator {
                     Path::Extension(ext) => eprintln!("{:?}", ext),
                 }
             }
+        } else {
+            trace!("no paths to process");
         }
     }
 
     fn get_ref_schema(&self, ref_: &str) -> Option<&Schema> {
+        debug!("getting schema for reference `{ref_}`");
         if ref_.starts_with(DEFINITIONS_REF) {
             if let Some(definitions) = &self.swagger.definitions {
                 return definitions.get(ref_);
@@ -238,7 +262,9 @@ impl CodeGenerator {
         is_required: bool,
         parent_name: Option<&str>,
     ) -> Option<RustType> {
+        debug!("mapping reference `{ref_}`, required: {is_required}, parent: {parent_name:?}");
         let schema = self.get_ref_schema(ref_)?;
+        trace!("got schema {schema:?}");
         let ref_ = ref_
             .trim_start_matches(RESPONSES_REF)
             .trim_start_matches(DEFINITIONS_REF);
@@ -265,6 +291,9 @@ impl CodeGenerator {
         parent_name: Option<&str>,
     ) -> Option<RustType> {
         let ty = schema.type_()?;
+        trace!(
+            "mapping schema type, type: {ty}, ref: {ref_:?}, required: {is_required}, parent: {parent_name:?}"
+        );
         let mut ty = match ty {
             "integer" => schema
                 .format
@@ -323,7 +352,6 @@ impl CodeGenerator {
                         RustType::Value
                     }
                 } else {
-                    eprintln!("else value {:#?}", schema);
                     RustType::Value
                 };
 
@@ -342,6 +370,7 @@ impl CodeGenerator {
         if !is_required {
             ty = RustType::Option(Box::new(ty));
         }
+        trace!("mapped to {ty}");
         Some(ty)
     }
 
@@ -367,6 +396,8 @@ impl CodeGenerator {
         schema: &Schema,
         writer: &mut impl std::io::Write,
     ) -> std::io::Result<()> {
+        debug!("handling schema {name}, parent: {parent_name:?}");
+        trace!("{schema:?}");
         let name = if name.is_empty() {
             if let Some(title) = &schema.title {
                 title.into()
@@ -379,21 +410,23 @@ impl CodeGenerator {
             name.into()
         };
         let type_name = format_type_name(&name);
+        trace!("mapped name: {name}, type name: {type_name}");
 
         if schema.properties.is_some() {
             self.handle_props_schema(&name, schema, writer)?
         } else if schema.is_array() {
             self.handle_array_schema(&name, schema, writer)?
         } else if let Some(ref_) = schema.ref_.as_deref() {
-            let _ty = self.map_reference(ref_, true, Some(&name));
+            error!("got unhandled reference schema {ref_}");
         } else if let Some(ty) = self.map_schema_type(schema, None, true, Some(&name)) {
+            debug!("handling basic type schema {type_name} = {ty}");
             if let Some(description) = &schema.description {
                 self.print_doc_comment(description, None, writer)?;
             }
 
             writeln!(writer, "pub type {type_name} = {};\n", ty.to_string())?;
         } else {
-            eprintln!("else {:?}", schema);
+            error!("unhandled schema {schema:?}");
         }
 
         Ok(())
@@ -405,6 +438,7 @@ impl CodeGenerator {
         schema: &Schema,
         writer: &mut impl std::io::Write,
     ) -> std::io::Result<()> {
+        debug!("handling property schema `{name}`");
         let props = schema.properties.as_ref().unwrap();
         let type_name = format_type_name(&name);
         self.print_derives(&schema, writer)?;
@@ -419,8 +453,11 @@ impl CodeGenerator {
                 .as_ref()
                 .map(|r| r.contains(prop))
                 .unwrap_or_default();
+            debug!("handling property `{prop}`, required: {is_required}");
+
             match item {
                 Item::Reference(ref_) => {
+                    trace!("`{prop}` is a reference to `ref_`");
                     let ty = if let Some(ty) = self.map_reference(ref_, is_required, Some(prop)) {
                         ty
                     } else {
@@ -433,6 +470,7 @@ impl CodeGenerator {
                     writeln!(writer, "    pub {formatted_var}: {ty},")?;
                 }
                 it @ Item::Object(item) => {
+                    trace!("`{prop}` is an object {item:?}");
                     let formatted_var = format_var_name(prop);
 
                     let prop_ty_name = if item.is_object() {
@@ -448,6 +486,7 @@ impl CodeGenerator {
                     } else {
                         RustType::Option(Box::new(RustType::Value))
                     };
+                    debug!("mapped type for `{name}` - {ty}");
 
                     if &&formatted_var != prop {
                         writeln!(writer, "    #[serde(rename = \"{prop}\")]")?;
@@ -481,6 +520,7 @@ impl CodeGenerator {
         schema: &Schema,
         writer: &mut impl std::io::Write,
     ) -> std::io::Result<()> {
+        debug!("handling array schema `{name}`");
         if let Some(item) = &schema.items {
             let ty = self.map_item_type(&item, true, Some(&name));
             if ty.is_none() {
@@ -488,6 +528,7 @@ impl CodeGenerator {
             }
             let ty = ty.unwrap();
             let ty = RustType::Vec(Box::new(ty));
+            debug!("mapped type for `{name}` - {ty}");
             self.print_description(&schema, writer)?;
             writeln!(writer, "pub type {} = {ty};\n", format_type_name(name))?;
         }

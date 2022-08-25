@@ -25,6 +25,7 @@ enum GenerateTarget {
 
 fn main() {
     let rustgen = SwaggerRustgen::parse();
+    pretty_env_logger::init();
 
     match rustgen.subcommand {
         Command::Generate { target } => match target {
