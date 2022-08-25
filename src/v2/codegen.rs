@@ -7,6 +7,9 @@ use crate::{
     types::RustType,
 };
 
+use std::cmp::Ordering;
+
+#[derive(Debug)]
 struct ModelPrototype {
     pub name: String,
     pub parent_name: Option<String>,
@@ -39,37 +42,88 @@ impl CodeGenerator {
     }
 
     fn generate(&mut self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
-        for model in std::mem::take(&mut self.models_to_generate) {
-            eprintln!("processing {}", model.name);
-            if let Item::Object(schema) = &model.schema {
-                self.handle_schema(&model.name, model.parent_name.as_deref(), schema, writer)?;
+        let mut models = std::mem::take(&mut self.models_to_generate);
+        models.sort_by(
+            |a, b| match (a.schema.is_reference(), b.schema.is_reference()) {
+                (true, true) | (false, false) => Ordering::Equal,
+                (true, false) => Ordering::Greater,
+                (false, true) => Ordering::Less,
+            },
+        );
+        for model in models {
+            match model.schema {
+                Item::Reference(ref_) => {
+                    let should_process = self
+                        .get_ref_schema(&ref_)
+                        .map(|s| s.is_object())
+                        .unwrap_or_default();
+                    if should_process {
+                        if let Some(ty) = self.map_reference(&ref_, true, Some(&model.name)) {
+                            let type_name = format_type_name(&model.name);
+                            if self.processed_types.contains(&type_name) {
+                                continue;
+                            } else {
+                                self.processed_types.push(type_name.clone());
+                            }
+                            writeln!(writer, "pub type {type_name} = {};\n", ty.to_string())?;
+                        }
+                    }
+                }
+                Item::Object(schema) => {
+                    let schema = schema.merge_all_of_schema();
+                    self.handle_schema(&model.name, model.parent_name.as_deref(), &schema, writer)?;
+                }
             }
         }
         Ok(())
     }
 
-    fn add_model_prototype(
+    fn add_ref_prototype(
+        &mut self,
+        name: impl Into<String>,
+        parent_name: Option<String>,
+        ref_: String,
+    ) {
+        self.models_to_generate.push(ModelPrototype {
+            name: name.into(),
+            parent_name,
+            schema: Item::Reference(ref_),
+        });
+    }
+
+    fn add_schema_prototype(
         &mut self,
         name: impl Into<String>,
         parent_name: Option<String>,
         schema: &Schema,
     ) {
         let name = name.into();
+        if let Some(ref_) = &schema.ref_ {
+            self.add_ref_prototype(name, parent_name, ref_.to_string());
+            return;
+        }
+
         if let Some(items) = &schema.items {
-            if let Item::Object(child_schema) = items {
-                if child_schema.is_object() {
-                    self.add_model_prototype("", Some(name.clone()), &child_schema)
+            match items {
+                Item::Object(child_schema) => {
+                    if child_schema.is_object() {
+                        self.add_schema_prototype("", Some(name.clone()), &child_schema)
+                    }
                 }
+                _ => {}
             }
         }
 
         if let Some(props) = &schema.properties {
             for (prop_name, prop_schema) in props.0.iter() {
-                if let Item::Object(prop_schema) = prop_schema {
-                    if prop_schema.is_object() && prop_schema.properties.is_some() {
-                        let prop_name = format!("{name}{prop_name}");
-                        self.add_model_prototype(prop_name, Some(name.clone()), &prop_schema)
+                match prop_schema {
+                    Item::Object(prop_schema) => {
+                        if prop_schema.is_object() && prop_schema.properties.is_some() {
+                            let prop_name = format!("{name}{prop_name}");
+                            self.add_schema_prototype(prop_name, Some(name.clone()), &prop_schema)
+                        }
                     }
+                    _ => {}
                 }
             }
         }
@@ -87,7 +141,7 @@ impl CodeGenerator {
             definitions.sort_unstable_by_key(|(k, _)| *k);
 
             for (name, schema) in definitions {
-                self.add_model_prototype(name, None, schema);
+                self.add_schema_prototype(name, None, schema);
             }
         };
     }
@@ -98,11 +152,16 @@ impl CodeGenerator {
             responses.sort_unstable_by_key(|(k, _)| *k);
 
             for (name, response) in responses {
-                if let Response::Object(response) = response {
-                    if let Some(schema) = &response.schema {
-                        let mut schema = schema.clone();
-                        schema.description = response.description.clone();
-                        self.add_model_prototype(name, None, &schema);
+                match response {
+                    Response::Object(response) => {
+                        if let Some(schema) = &response.schema {
+                            let mut schema = schema.clone();
+                            schema.description = response.description.clone();
+                            self.add_schema_prototype(name, None, &schema);
+                        }
+                    }
+                    Response::Reference(ref_) => {
+                        self.add_ref_prototype(name, None, ref_.to_string())
                     }
                 }
             }
@@ -123,7 +182,7 @@ impl CodeGenerator {
                                     if let Some(schema) = &response.schema {
                                         let mut schema = schema.clone();
                                         schema.description = response.description.clone();
-                                        self.add_model_prototype(
+                                        self.add_schema_prototype(
                                             &format!(
                                                 "{}{code}Response",
                                                 op.operation_id
@@ -159,42 +218,35 @@ impl CodeGenerator {
         }
     }
 
+    fn get_ref_schema(&self, ref_: &str) -> Option<&Schema> {
+        if ref_.starts_with(DEFINITIONS_REF) {
+            if let Some(definitions) = &self.swagger.definitions {
+                return definitions.get(ref_);
+            }
+        } else if ref_.starts_with(RESPONSES_REF) {
+            if let Some(responses) = &self.swagger.responses {
+                let response = responses.0.get(ref_)?;
+                match response {
+                    Response::Object(response) => return response.schema.as_ref(),
+                    Response::Reference(ref_) => return self.get_ref_schema(ref_),
+                }
+            }
+        }
+
+        None
+    }
+
     fn map_reference(
         &self,
         ref_: &str,
         is_required: bool,
         parent_name: Option<&str>,
     ) -> Option<RustType> {
-        if ref_.starts_with(DEFINITIONS_REF) {
-            if let Some(definitions) = &self.swagger.definitions {
-                let schema = definitions.get(ref_)?;
-                self.map_schema_type(
-                    schema,
-                    Some(ref_.trim_start_matches(DEFINITIONS_REF)),
-                    is_required,
-                    parent_name,
-                )
-            } else {
-                None
-            }
-        } else if ref_.starts_with(RESPONSES_REF) {
-            if let Some(responses) = &self.swagger.responses {
-                let response = responses.0.get(ref_)?;
-                match response {
-                    Response::Object(response) => self.map_schema_type(
-                        response.schema.as_ref()?,
-                        Some(ref_.trim_start_matches(RESPONSES_REF)),
-                        is_required,
-                        parent_name,
-                    ),
-                    Response::Reference(ref_) => self.map_reference(ref_, is_required, parent_name),
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        }
+        let schema = self.get_ref_schema(ref_)?;
+        let ref_ = ref_
+            .trim_start_matches(RESPONSES_REF)
+            .trim_start_matches(DEFINITIONS_REF);
+        self.map_schema_type(schema, Some(ref_), is_required, parent_name)
     }
 
     fn map_item_type(
@@ -405,14 +457,10 @@ impl CodeGenerator {
                 }
             }
             writeln!(writer, "}}\n")?;
-        } else if schema.all_of.is_some() {
-            let merged = schema.clone().merge_all_of_schema();
-            return self.handle_schema(&name, None, &merged, writer);
         } else if schema.is_array() {
             self.handle_array_schema(&name, schema, writer)?
         } else if let Some(ref_) = schema.ref_.as_deref() {
             let _ty = self.map_reference(ref_, true, Some(&name));
-            //eprintln!("else if {}", _ty.unwrap_or(RustType::Bool));
         } else if let Some(ty) = self.map_schema_type(schema, None, true, Some(&name)) {
             if self.was_processed(&type_name) {
                 return Ok(());
@@ -446,7 +494,6 @@ impl CodeGenerator {
             let ty = ty.unwrap();
             let item_type_name = format!("{}Item", format_type_name(ty.to_string().as_str()));
             let ty = RustType::Vec(Box::new(ty));
-            self.print_derives(&schema, writer)?;
             self.print_description(&schema, writer)?;
             writeln!(writer, "pub type {} = {ty};\n", format_type_name(name))?;
             if let Item::Object(item) = item {

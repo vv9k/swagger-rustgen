@@ -9,6 +9,16 @@ pub enum Item {
     Object(Box<Schema>),
 }
 
+impl Item {
+    pub fn is_reference(&self) -> bool {
+        matches!(self, Item::Reference(_))
+    }
+
+    pub fn is_object(&self) -> bool {
+        matches!(self, Item::Object(_))
+    }
+}
+
 impl<'de> de::Deserialize<'de> for Item {
     fn deserialize<D>(deserializer: D) -> Result<Item, D::Error>
     where

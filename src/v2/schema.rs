@@ -67,18 +67,7 @@ impl Schema {
         }
     }
     pub fn type_(&self) -> Option<&str> {
-        if self.type_.is_none() {
-            self.all_of.as_ref().and_then(|schemas| {
-                schemas
-                    .iter()
-                    .map(|s| s.type_.as_deref())
-                    .filter(|s| s.is_some())
-                    .next()
-                    .flatten()
-            })
-        } else {
-            self.type_.as_deref()
-        }
+        self.type_.as_deref()
     }
 
     pub fn is_of_type(&self, type_: impl AsRef<str>) -> bool {
@@ -91,5 +80,30 @@ impl Schema {
 
     pub fn is_array(&self) -> bool {
         self.is_of_type("array")
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::Schema;
+
+    #[test]
+    fn schema_types() {
+        let s = Schema::default();
+        assert_eq!(s.type_(), None);
+        assert!(!s.is_array());
+        assert!(!s.is_object());
+        let s = Schema {
+            type_: Some("array".into()),
+            ..Default::default()
+        };
+        assert!(s.is_array());
+        assert!(!s.is_object());
+        let s = Schema {
+            type_: Some("object".into()),
+            ..Default::default()
+        };
+        assert!(!s.is_array());
+        assert!(s.is_object());
     }
 }
