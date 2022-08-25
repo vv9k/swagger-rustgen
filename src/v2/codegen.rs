@@ -18,7 +18,6 @@ struct ModelPrototype {
 
 pub struct CodeGenerator {
     swagger: Swagger,
-    processed_types: Vec<String>,
     models_to_generate: Vec<ModelPrototype>,
 }
 
@@ -26,7 +25,6 @@ impl CodeGenerator {
     pub fn new(swagger: Swagger) -> Self {
         Self {
             swagger,
-            processed_types: vec![],
             models_to_generate: vec![],
         }
     }
@@ -43,6 +41,8 @@ impl CodeGenerator {
 
     fn generate(&mut self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
         let mut models = std::mem::take(&mut self.models_to_generate);
+
+        // Generate object schemas first so that all references are valid
         models.sort_by(
             |a, b| match (a.schema.is_reference(), b.schema.is_reference()) {
                 (true, true) | (false, false) => Ordering::Equal,
@@ -50,21 +50,17 @@ impl CodeGenerator {
                 (false, true) => Ordering::Less,
             },
         );
+
         for model in models {
             match model.schema {
                 Item::Reference(ref_) => {
-                    let should_process = self
-                        .get_ref_schema(&ref_)
-                        .map(|s| s.is_object())
-                        .unwrap_or_default();
-                    if should_process {
+                    if let Some(schema) = self.get_ref_schema(&ref_) {
+                        if !schema.is_object() {
+                            continue;
+                        }
                         if let Some(ty) = self.map_reference(&ref_, true, Some(&model.name)) {
                             let type_name = format_type_name(&model.name);
-                            if self.processed_types.contains(&type_name) {
-                                continue;
-                            } else {
-                                self.processed_types.push(type_name.clone());
-                            }
+                            self.print_description(&schema, writer)?;
                             writeln!(writer, "pub type {type_name} = {};\n", ty.to_string())?;
                         }
                     }
@@ -382,14 +378,8 @@ impl CodeGenerator {
         } else {
             name.into()
         };
-        let mut type_name = format_type_name(&name);
+        let type_name = format_type_name(&name);
         if let Some(props) = &schema.properties {
-            if self.processed_types.contains(&type_name) {
-                type_name.push_str("_");
-            }
-
-            self.processed_types.push(type_name.clone());
-
             self.print_derives(&schema, writer)?;
             self.print_description(&schema, writer)?;
 
@@ -462,12 +452,6 @@ impl CodeGenerator {
         } else if let Some(ref_) = schema.ref_.as_deref() {
             let _ty = self.map_reference(ref_, true, Some(&name));
         } else if let Some(ty) = self.map_schema_type(schema, None, true, Some(&name)) {
-            if self.was_processed(&type_name) {
-                return Ok(());
-            } else {
-                self.processed_types.push(type_name.clone());
-            }
-
             if let Some(description) = &schema.description {
                 self.print_doc_comment(description, None, writer)?;
             }
@@ -518,11 +502,5 @@ impl CodeGenerator {
             self.print_doc_comment(description, None, writer)?;
         }
         Ok(())
-    }
-
-    fn was_processed(&mut self, type_: impl AsRef<str>) -> bool {
-        let type_ = type_.as_ref();
-        let res = self.processed_types.iter().any(|ty| ty == type_);
-        res
     }
 }
