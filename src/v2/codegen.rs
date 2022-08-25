@@ -123,6 +123,22 @@ impl CodeGenerator {
                         if prop_schema.is_object() && prop_schema.properties.is_some() {
                             let prop_name = format!("{name}{prop_name}InlineItem");
                             self.add_schema_prototype(prop_name, Some(name.clone()), &prop_schema)
+                        } else if prop_schema.is_array() {
+                            if let Some(items) = &prop_schema.items {
+                                match items {
+                                    Item::Object(prop_schema) if prop_schema.is_object() => {
+                                        let prop_name = format!("{name}{prop_name}InlineItem");
+                                        self.add_schema_prototype(
+                                            prop_name,
+                                            Some(name.clone()),
+                                            &prop_schema,
+                                        )
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            let prop_name = format!("{name}{prop_name}InlineItem");
+                            error!("skipping {prop_name} {prop_schema:?}")
                         }
                     }
                     _ => {}
@@ -148,7 +164,8 @@ impl CodeGenerator {
             definitions.sort_unstable_by_key(|(k, _)| *k);
 
             for (name, schema) in definitions {
-                self.add_schema_prototype(name, None, schema);
+                let schema = schema.clone().merge_all_of_schema();
+                self.add_schema_prototype(name, None, &schema);
             }
         } else {
             trace!("no definitions to process");
@@ -169,6 +186,7 @@ impl CodeGenerator {
                         if let Some(schema) = &response.schema {
                             let mut schema = schema.clone();
                             schema.description = response.description.clone();
+                            let schema = schema.merge_all_of_schema();
                             self.add_schema_prototype(name, None, &schema);
                         }
                     }
@@ -199,6 +217,7 @@ impl CodeGenerator {
                                     if let Some(schema) = &response.schema {
                                         let mut schema = schema.clone();
                                         schema.description = response.description.clone();
+                                        let schema = schema.merge_all_of_schema();
                                         self.add_schema_prototype(
                                             &format!(
                                                 "{}{code}Response",
@@ -342,12 +361,12 @@ impl CodeGenerator {
                         return None;
                     }
                 } else if schema.properties.is_some() {
-                    if let Some(title) = &schema.x_go_name {
-                        RustType::Custom(title.to_string())
-                    } else if let Some(title) = &schema.title {
+                    if let Some(title) = &schema.title {
                         RustType::Custom(title.to_string())
                     } else if let Some(title) = parent_name {
                         RustType::Custom(format!("{title}InlineItem"))
+                    } else if let Some(title) = &schema.x_go_name {
+                        RustType::Custom(title.to_string())
                     } else {
                         RustType::Value
                     }
@@ -458,11 +477,7 @@ impl CodeGenerator {
                     trace!("`{prop}` is an object {item:?}");
                     let formatted_var = format_var_name(prop);
 
-                    let prop_ty_name = if item.is_object() {
-                        format!("{type_name}{prop}")
-                    } else {
-                        prop.to_string()
-                    };
+                    let prop_ty_name = format!("{type_name}{prop}");
 
                     let ty = if let Some(ty) =
                         self.map_item_type(it, is_required, Some(&prop_ty_name))
@@ -471,7 +486,7 @@ impl CodeGenerator {
                     } else {
                         RustType::Option(Box::new(RustType::Value))
                     };
-                    debug!("mapped type for `{name}` - {ty}");
+                    debug!("mapped type for `{name}` `{prop}` - {ty}");
 
                     if &&formatted_var != prop {
                         writeln!(writer, "    #[serde(rename = \"{prop}\")]")?;
