@@ -31,3 +31,61 @@ pub struct Schema {
     #[serde(rename = "x-go-package")]
     pub x_go_package: Option<String>,
 }
+
+impl Schema {
+    pub fn merge_all_of_schema(self) -> Schema {
+        if let Some(all_of) = self.all_of {
+            let base_schema = Schema {
+                description: self.description.clone(),
+                title: self.title.clone(),
+                properties: Some(Items::default()),
+                ..Default::default()
+            };
+            all_of.into_iter().fold(base_schema, |mut acc, schema| {
+                if let Some(props) = &mut acc.properties {
+                    if let Some(new_props) = &schema.properties {
+                        props
+                            .0
+                            .extend(new_props.0.iter().map(|(k, v)| (k.clone(), v.clone())));
+                    }
+                }
+                macro_rules! add_if_not_set {
+                    ($($field:ident),+) => {
+                        $(
+                        if acc.$field.is_none() && schema.$field.is_some() {
+                            acc.$field = schema.$field;
+                        }
+                        )+
+                    };
+                }
+                add_if_not_set!(format, title, description, required, type_, enum_);
+
+                acc
+            })
+        } else {
+            self
+        }
+    }
+    pub fn type_(&self) -> Option<&str> {
+        if self.type_.is_none() {
+            self.all_of.as_ref().and_then(|schemas| {
+                schemas
+                    .iter()
+                    .map(|s| s.type_.as_deref())
+                    .filter(|s| s.is_some())
+                    .next()
+                    .flatten()
+            })
+        } else {
+            self.type_.as_deref()
+        }
+    }
+
+    pub fn is_of_type(&self, type_: impl AsRef<str>) -> bool {
+        self.type_() == Some(type_.as_ref())
+    }
+
+    pub fn is_object(&self) -> bool {
+        self.is_of_type("object")
+    }
+}
