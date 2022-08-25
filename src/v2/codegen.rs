@@ -489,7 +489,8 @@ impl CodeGenerator {
         _schema: &Schema,
         writer: &mut impl std::io::Write,
     ) -> std::io::Result<()> {
-        const DEFAULT_DERIVES: &str = "#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]";
+        const DEFAULT_DERIVES: &str =
+            "#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]";
         writeln!(writer, "{DEFAULT_DERIVES}")
     }
 
