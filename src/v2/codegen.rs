@@ -119,7 +119,7 @@ impl CodeGenerator {
                 match prop_schema {
                     Item::Object(prop_schema) => {
                         if prop_schema.is_object() && prop_schema.properties.is_some() {
-                            let prop_name = format!("{name}{prop_name}");
+                            let prop_name = format!("{name}{prop_name}InlineItem");
                             self.add_schema_prototype(prop_name, Some(name.clone()), &prop_schema)
                         }
                     }
@@ -322,7 +322,7 @@ impl CodeGenerator {
                     } else if let Some(title) = &schema.title {
                         RustType::Custom(title.to_string())
                     } else if let Some(title) = parent_name {
-                        RustType::Custom(title.to_string())
+                        RustType::Custom(format!("{title}InlineItem"))
                     } else {
                         RustType::Value
                     }
@@ -375,7 +375,7 @@ impl CodeGenerator {
             if let Some(title) = &schema.title {
                 title.into()
             } else if let Some(parent_name) = parent_name {
-                format!("{parent_name}Child")
+                format!("{parent_name}InlineItem")
             } else {
                 Default::default()
             }
@@ -492,15 +492,10 @@ impl CodeGenerator {
                 return Ok(());
             }
             let ty = ty.unwrap();
-            let item_type_name = format!("{}Item", format_type_name(ty.to_string().as_str()));
+            //let item_type_name = format_type_name(ty.to_string().as_str());
             let ty = RustType::Vec(Box::new(ty));
             self.print_description(&schema, writer)?;
             writeln!(writer, "pub type {} = {ty};\n", format_type_name(name))?;
-            if let Item::Object(item) = item {
-                if !self.was_processed(&item_type_name) {
-                    self.handle_schema(&item_type_name, Some(name), &item, writer)?;
-                }
-            }
         }
         Ok(())
     }
