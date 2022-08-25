@@ -379,74 +379,9 @@ impl CodeGenerator {
             name.into()
         };
         let type_name = format_type_name(&name);
-        if let Some(props) = &schema.properties {
-            self.print_derives(&schema, writer)?;
-            self.print_description(&schema, writer)?;
 
-            writeln!(writer, "pub struct {} {{", type_name)?;
-            let mut props: Vec<_> = props.0.iter().collect();
-            props.sort_unstable_by_key(|(k, _)| *k);
-            for (prop, item) in &props {
-                let is_required = schema
-                    .required
-                    .as_ref()
-                    .map(|r| r.contains(prop))
-                    .unwrap_or_default();
-                match item {
-                    Item::Reference(ref_) => {
-                        let ty = if let Some(ty) = self.map_reference(ref_, is_required, Some(prop))
-                        {
-                            ty
-                        } else {
-                            RustType::Option(Box::new(RustType::Value))
-                        };
-                        let formatted_var = format_var_name(prop);
-                        if &&formatted_var != prop {
-                            writeln!(writer, "    #[serde(rename = \"{prop}\")]")?;
-                        }
-                        writeln!(writer, "    pub {formatted_var}: {ty},")?;
-                    }
-                    it @ Item::Object(item) => {
-                        let formatted_var = format_var_name(prop);
-
-                        let prop_ty_name = if item.is_object() {
-                            format!("{type_name}{prop}")
-                        } else {
-                            prop.to_string()
-                        };
-
-                        let ty = if let Some(ty) =
-                            self.map_item_type(it, is_required, Some(&prop_ty_name))
-                        {
-                            ty
-                        } else {
-                            RustType::Option(Box::new(RustType::Value))
-                        };
-
-                        if &&formatted_var != prop {
-                            writeln!(writer, "    #[serde(rename = \"{prop}\")]")?;
-                        }
-
-                        if matches!(ty, RustType::Vec(_) | RustType::Object(_)) {
-                            writeln!(writer, "    #[serde(default)]")?;
-                        }
-
-                        if !is_required {
-                            writeln!(
-                                writer,
-                                "    #[serde(skip_serializing_if = \"Option::is_none\")]"
-                            )?;
-                        }
-
-                        if let Some(descr) = &item.description {
-                            self.print_doc_comment(descr, Some(4), writer)?;
-                        }
-
-                        writeln!(writer, "    pub {formatted_var}: {ty},")?;
-                    }
-                }
-            }
-            writeln!(writer, "}}\n")?;
+        if schema.properties.is_some() {
+            self.handle_props_schema(&name, schema, writer)?
         } else if schema.is_array() {
             self.handle_array_schema(&name, schema, writer)?
         } else if let Some(ref_) = schema.ref_.as_deref() {
@@ -464,6 +399,82 @@ impl CodeGenerator {
         Ok(())
     }
 
+    fn handle_props_schema(
+        &mut self,
+        name: &str,
+        schema: &Schema,
+        writer: &mut impl std::io::Write,
+    ) -> std::io::Result<()> {
+        let props = schema.properties.as_ref().unwrap();
+        let type_name = format_type_name(&name);
+        self.print_derives(&schema, writer)?;
+        self.print_description(&schema, writer)?;
+
+        writeln!(writer, "pub struct {} {{", type_name)?;
+        let mut props: Vec<_> = props.0.iter().collect();
+        props.sort_unstable_by_key(|(k, _)| *k);
+        for (prop, item) in &props {
+            let is_required = schema
+                .required
+                .as_ref()
+                .map(|r| r.contains(prop))
+                .unwrap_or_default();
+            match item {
+                Item::Reference(ref_) => {
+                    let ty = if let Some(ty) = self.map_reference(ref_, is_required, Some(prop)) {
+                        ty
+                    } else {
+                        RustType::Option(Box::new(RustType::Value))
+                    };
+                    let formatted_var = format_var_name(prop);
+                    if &&formatted_var != prop {
+                        writeln!(writer, "    #[serde(rename = \"{prop}\")]")?;
+                    }
+                    writeln!(writer, "    pub {formatted_var}: {ty},")?;
+                }
+                it @ Item::Object(item) => {
+                    let formatted_var = format_var_name(prop);
+
+                    let prop_ty_name = if item.is_object() {
+                        format!("{type_name}{prop}")
+                    } else {
+                        prop.to_string()
+                    };
+
+                    let ty = if let Some(ty) =
+                        self.map_item_type(it, is_required, Some(&prop_ty_name))
+                    {
+                        ty
+                    } else {
+                        RustType::Option(Box::new(RustType::Value))
+                    };
+
+                    if &&formatted_var != prop {
+                        writeln!(writer, "    #[serde(rename = \"{prop}\")]")?;
+                    }
+
+                    if matches!(ty, RustType::Vec(_) | RustType::Object(_)) {
+                        writeln!(writer, "    #[serde(default)]")?;
+                    }
+
+                    if !is_required {
+                        writeln!(
+                            writer,
+                            "    #[serde(skip_serializing_if = \"Option::is_none\")]"
+                        )?;
+                    }
+
+                    if let Some(descr) = &item.description {
+                        self.print_doc_comment(descr, Some(4), writer)?;
+                    }
+
+                    writeln!(writer, "    pub {formatted_var}: {ty},")?;
+                }
+            }
+        }
+        writeln!(writer, "}}\n")
+    }
+
     fn handle_array_schema(
         &mut self,
         name: &str,
@@ -476,7 +487,6 @@ impl CodeGenerator {
                 return Ok(());
             }
             let ty = ty.unwrap();
-            //let item_type_name = format_type_name(ty.to_string().as_str());
             let ty = RustType::Vec(Box::new(ty));
             self.print_description(&schema, writer)?;
             writeln!(writer, "pub type {} = {ty};\n", format_type_name(name))?;
