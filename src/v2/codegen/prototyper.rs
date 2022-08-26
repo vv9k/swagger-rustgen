@@ -103,7 +103,7 @@ impl Prototyper {
                                 }
                             }
                             error!("skipping {prop_name} {prop_schema:?}")
-                        } else if prop_schema.is_enum() {
+                        } else if prop_schema.is_string_enum() {
                             trace!("adding enum schema {prop_name}");
                             self.add_schema_prototype(prop_name, Some(name.clone()), &prop_schema)
                         }

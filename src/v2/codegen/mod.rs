@@ -139,7 +139,7 @@ impl CodeGenerator {
             self.generate_props_schema(&name, schema, writer)?
         } else if schema.is_array() {
             self.generate_array_schema(&name, schema, writer)?
-        } else if schema.is_enum() {
+        } else if schema.is_string_enum() {
             self.generate_enum_schema(&name, schema, writer)?
         } else if let Some(ref_) = schema.ref_.as_deref() {
             error!("got unhandled reference schema {ref_}");

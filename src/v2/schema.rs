@@ -52,7 +52,7 @@ impl Schema {
         self.is_of_type("array")
     }
 
-    pub fn is_enum(&self) -> bool {
+    pub fn is_string_enum(&self) -> bool {
         self.is_of_type("string") && !self.enum_.is_empty()
     }
 
