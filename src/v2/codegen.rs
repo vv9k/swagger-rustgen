@@ -68,7 +68,7 @@ impl CodeGenerator {
                                 log::warn!(
                                     "skipping type alias with same name `{type_name} == {ty_str}`"
                                 );
-                                return Ok(());
+                                continue;
                             }
                             self.print_description(&schema, writer)?;
                             writeln!(writer, "pub type {type_name} = {ty_str};\n")?;
