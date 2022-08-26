@@ -1,4 +1,4 @@
-use crate::v2::responses::Responses;
+use crate::v2::{parameter::Parameter, responses::Responses};
 
 use serde::Deserialize;
 
@@ -17,4 +17,5 @@ pub struct Operation {
     pub responses: Responses,
     #[serde(default)]
     pub depracated: bool,
+    pub parameters: Vec<Parameter>,
 }

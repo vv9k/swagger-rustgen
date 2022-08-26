@@ -3,6 +3,7 @@ use crate::v2::{items::Item, schema::Schema};
 use serde::{de, Deserialize};
 use serde_yaml::Value;
 
+#[derive(Debug, Clone)]
 pub enum Parameter {
     Path(PathParameter),
     Query(QueryParameter),
