@@ -44,9 +44,10 @@ impl CodeGenerator {
         let mut models = std::mem::take(&mut self.models_to_generate);
 
         // Generate object schemas first so that all references are valid
+        // and fallback to alphabetical sorting
         models.sort_by(
             |a, b| match (a.schema.is_reference(), b.schema.is_reference()) {
-                (true, true) | (false, false) => Ordering::Equal,
+                (true, true) | (false, false) => a.name.cmp(&b.name),
                 (true, false) => Ordering::Greater,
                 (false, true) => Ordering::Less,
             },
