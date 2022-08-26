@@ -53,6 +53,7 @@ impl CodeGenerator {
         );
 
         for model in models {
+            trace!("generating {} `{}`", model.schema.type_(), &model.name);
             match model.schema {
                 Item::Reference(ref_) => {
                     if let Some(schema) = self.get_ref_schema(&ref_) {
@@ -180,6 +181,7 @@ impl CodeGenerator {
             definitions.sort_unstable_by_key(|(k, _)| *k);
 
             for (name, schema) in definitions {
+                trace!("processing definition `{name}`");
                 let schema = schema.clone().merge_all_of_schema();
                 self.add_schema_prototype(name, None, &schema);
             }
@@ -197,6 +199,7 @@ impl CodeGenerator {
             responses.sort_unstable_by_key(|(k, _)| *k);
 
             for (name, response) in responses {
+                trace!("processing response `{name}`");
                 match response {
                     Response::Object(response) => {
                         if let Some(schema) = &response.schema {
@@ -253,7 +256,8 @@ impl CodeGenerator {
                 };
             }
 
-            for (_name, path) in paths {
+            for (name, path) in paths {
+                trace!("processing path `{name}`");
                 match path {
                     Path::Item(path) => {
                         handle_method!(path, get);

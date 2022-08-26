@@ -17,6 +17,13 @@ impl Item {
     pub fn is_object(&self) -> bool {
         matches!(self, Item::Object(_))
     }
+
+    pub fn type_(&self) -> &'static str {
+        match self {
+            Item::Reference(_) => "reference",
+            Item::Object(_) => "object",
+        }
+    }
 }
 
 impl<'de> de::Deserialize<'de> for Item {
