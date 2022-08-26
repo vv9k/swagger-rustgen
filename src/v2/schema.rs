@@ -34,43 +34,6 @@ pub struct Schema {
 }
 
 impl Schema {
-    pub fn merge_all_of_schema(self) -> Schema {
-        if let Some(all_of) = self.all_of {
-            let base_schema = Schema {
-                description: self.description.clone(),
-                title: self.title.clone(),
-                properties: Some(Items::default()),
-                ..Default::default()
-            };
-            all_of.into_iter().fold(base_schema, |mut acc, mut schema| {
-                if let Some(props) = &mut acc.properties {
-                    if let Some(new_props) = &schema.properties {
-                        props
-                            .0
-                            .extend(new_props.0.iter().map(|(k, v)| (k.clone(), v.clone())));
-                    }
-                }
-                macro_rules! add_if_not_set {
-                    ($($field:ident),+) => {
-                        $(
-                        if acc.$field.is_none() && schema.$field.is_some() {
-                            acc.$field = schema.$field;
-                        }
-                        )+
-                    };
-                }
-                add_if_not_set!(format, title, description, required, type_);
-
-                if acc.enum_.is_empty() && !schema.enum_.is_empty() {
-                    acc.enum_.append(&mut schema.enum_);
-                }
-
-                acc
-            })
-        } else {
-            self
-        }
-    }
     pub fn type_(&self) -> Option<&str> {
         self.type_.as_deref()
     }
