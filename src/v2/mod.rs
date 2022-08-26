@@ -2,6 +2,7 @@ pub mod codegen;
 pub mod definitions;
 pub mod items;
 pub mod operation;
+pub mod parameter;
 pub mod path;
 pub mod responses;
 pub mod schema;
