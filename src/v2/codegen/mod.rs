@@ -48,51 +48,70 @@ impl CodeGenerator {
         );
 
         for model in models {
-            trace!("generating {} `{}`", model.schema.type_(), &model.name);
-            match model.schema {
-                Item::Reference(ref_) => {
-                    if let Some(schema) = self.swagger.get_ref_schema(&ref_) {
-                        if !schema.is_object() {
-                            continue;
-                        }
-                        if let Some(ty) =
-                            self.swagger
-                                .map_reference_type(&ref_, true, Some(&model.name))
-                        {
-                            let type_name = format_type_name(&model.name);
-                            let ty_str = ty.to_string();
+            self.generate_model(model, writer)?;
+        }
 
-                            if type_name == ty_str {
-                                log::warn!(
-                                    "skipping type alias with same name `{type_name} == {ty_str}`"
-                                );
-                                continue;
-                            }
+        Ok(())
+    }
 
-                            if self.generated_models.contains(&type_name) {
-                                log::warn!(
+    fn generate_model(
+        &mut self,
+        model: ModelPrototype,
+        writer: &mut impl std::io::Write,
+    ) -> std::io::Result<()> {
+        trace!("generating {} `{}`", model.schema.type_(), &model.name);
+        match &model.schema {
+            Item::Reference(ref_) => self.generate_reference_model(ref_, &model, writer)?,
+            Item::Object(schema) => self.generate_object_model(schema, &model, writer)?,
+        }
+        Ok(())
+    }
+
+    fn generate_reference_model(
+        &mut self,
+        ref_: &str,
+        model: &ModelPrototype,
+        writer: &mut impl std::io::Write,
+    ) -> std::io::Result<()> {
+        if let Some(schema) = self.swagger.get_ref_schema(ref_) {
+            let schema = self.swagger.merge_all_of_schema(schema.clone());
+            if !schema.is_object() {
+                return Ok(());
+            }
+            if let Some(ty) = self
+                .swagger
+                .map_reference_type(&ref_, true, Some(&model.name))
+            {
+                let type_name = format_type_name(&model.name);
+                let ty_str = ty.to_string();
+
+                if type_name == ty_str {
+                    log::warn!("skipping type alias with same name `{type_name} == {ty_str}`");
+                    return Ok(());
+                }
+
+                if self.generated_models.contains(&type_name) {
+                    log::warn!(
                                     "skipping type alias `{type_name}`, a type with the same name already exists"
                                 );
-                                continue;
-                            }
-                            self.print_description(&schema, writer)?;
-                            writeln!(writer, "pub type {type_name} = {ty_str};\n")?;
-                            self.generated_models.push(type_name);
-                        }
-                    }
+                    return Ok(());
                 }
-                Item::Object(schema) => {
-                    let schema = self.swagger.merge_all_of_schema(*schema);
-                    self.generate_schema(
-                        &model.name,
-                        model.parent_name.as_deref(),
-                        &schema,
-                        writer,
-                    )?;
-                }
+                self.print_description(&schema, writer)?;
+                writeln!(writer, "pub type {type_name} = {ty_str};\n")?;
+                self.generated_models.push(type_name);
             }
         }
         Ok(())
+    }
+
+    fn generate_object_model(
+        &mut self,
+        schema: &Schema,
+        model: &ModelPrototype,
+        writer: &mut impl std::io::Write,
+    ) -> std::io::Result<()> {
+        let schema = self.swagger.merge_all_of_schema(schema.clone());
+        self.generate_schema(&model.name, model.parent_name.as_deref(), &schema, writer)
     }
 
     fn generate_schema(
