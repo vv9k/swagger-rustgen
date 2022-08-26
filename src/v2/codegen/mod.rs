@@ -1,8 +1,6 @@
 mod prototyper;
 
-use crate::v2::{
-    items::Item, schema::Schema, trim_reference, Swagger, DEFINITIONS_REF, RESPONSES_REF,
-};
+use crate::v2::{items::Item, schema::Schema, Swagger};
 use crate::{
     name::{format_enum_value_name, format_type_name, format_var_name},
     types::RustType,
@@ -57,7 +55,10 @@ impl CodeGenerator {
                         if !schema.is_object() {
                             continue;
                         }
-                        if let Some(ty) = self.map_reference(&ref_, true, Some(&model.name)) {
+                        if let Some(ty) =
+                            self.swagger
+                                .map_reference_type(&ref_, true, Some(&model.name))
+                        {
                             let type_name = format_type_name(&model.name);
                             let ty_str = ty.to_string();
 
@@ -89,122 +90,6 @@ impl CodeGenerator {
         Ok(())
     }
 
-    fn map_reference(
-        &self,
-        ref_: &str,
-        is_required: bool,
-        parent_name: Option<&str>,
-    ) -> Option<RustType> {
-        debug!("mapping reference `{ref_}`, required: {is_required}, parent: {parent_name:?}");
-        let schema = self.swagger.get_ref_schema(ref_)?;
-        trace!("got schema {schema:?}");
-        let ref_ = ref_
-            .trim_start_matches(RESPONSES_REF)
-            .trim_start_matches(DEFINITIONS_REF);
-        self.map_schema_type(schema, Some(ref_), is_required, parent_name)
-    }
-
-    fn map_item_type(
-        &self,
-        item: &Item,
-        is_required: bool,
-        parent_name: Option<&str>,
-    ) -> Option<RustType> {
-        match item {
-            Item::Reference(ref_) => self.map_reference(ref_, is_required, parent_name),
-            Item::Object(item) => self.map_schema_type(item, None, is_required, parent_name),
-        }
-    }
-
-    fn map_schema_type(
-        &self,
-        schema: &Schema,
-        ref_: Option<&str>,
-        is_required: bool,
-        parent_name: Option<&str>,
-    ) -> Option<RustType> {
-        let ty = schema.type_()?;
-        trace!(
-            "mapping schema type, type: {ty}, ref: {ref_:?}, required: {is_required}, parent: {parent_name:?}"
-        );
-        let mut ty = match ty {
-            "integer" => schema
-                .format
-                .as_ref()
-                .and_then(|format| RustType::from_integer_format(format))
-                .unwrap_or(RustType::USize),
-            "string" => match schema
-                .format
-                .as_ref()
-                .map(|fmt| fmt.to_lowercase())
-                .as_deref()
-            {
-                Some("date-time") | Some("datetime") | Some("date time") => RustType::DateTime,
-                Some("binary") => RustType::Vec(Box::new(RustType::U8)),
-                _ => RustType::String,
-            },
-            "boolean" => RustType::Bool,
-            "array" => {
-                let ty = if let Some(ref_) = ref_ {
-                    RustType::Custom(trim_reference(ref_).to_string())
-                } else if let Some(item) = &schema.items {
-                    if let Some(ty) = self.map_item_type(item, true, parent_name) {
-                        RustType::Vec(Box::new(ty))
-                    } else {
-                        return None;
-                    }
-                } else {
-                    return None;
-                };
-
-                ty
-            }
-            "object" => {
-                let ty = if let Some(ref_) = ref_ {
-                    RustType::Custom(trim_reference(ref_).to_string())
-                } else if let Some(item) = &schema.additional_properties {
-                    if let Some(ty) = self.map_item_type(item, true, parent_name) {
-                        RustType::Object(Box::new(ty))
-                    } else {
-                        return None;
-                    }
-                } else if let Some(item) = &schema.items {
-                    if let Some(ty) = self.map_item_type(item, true, parent_name) {
-                        RustType::Object(Box::new(ty))
-                    } else {
-                        return None;
-                    }
-                } else if schema.properties.is_some() {
-                    if let Some(name) = schema.name() {
-                        RustType::Custom(name)
-                    } else if let Some(parent_name) = &parent_name {
-                        RustType::Custom(format!("{parent_name}InlineItem"))
-                    } else {
-                        RustType::Value
-                    }
-                } else {
-                    RustType::Value
-                };
-
-                ty
-            }
-            "number" => {
-                let ty = match schema.format.as_deref() {
-                    Some("double") => RustType::F64,
-                    Some("float") => RustType::F32,
-                    _ => return None,
-                };
-                ty
-            }
-            _ => return None,
-        };
-        if !is_required {
-            ty = RustType::Option(Box::new(ty));
-        }
-        trace!("mapped to {ty}");
-        Some(ty)
-    }
-
     fn handle_schema(
         &mut self,
         name: &str,
@@ -234,7 +119,10 @@ impl CodeGenerator {
             self.handle_enum_schema(&name, schema, writer)?
         } else if let Some(ref_) = schema.ref_.as_deref() {
             error!("got unhandled reference schema {ref_}");
-        } else if let Some(ty) = self.map_schema_type(schema, None, true, Some(&name)) {
+        } else if let Some(ty) = self
+            .swagger
+            .map_schema_type(schema, None, true, Some(&name))
+        {
             debug!("handling basic type schema {type_name} = {ty}");
             let ty_str = ty.to_string();
 
@@ -283,7 +171,10 @@ impl CodeGenerator {
             match item {
                 Item::Reference(ref_) => {
                     trace!("`{prop}` is a reference to `ref_`");
-                    let ty = if let Some(ty) = self.map_reference(ref_, is_required, Some(prop)) {
+                    let ty = if let Some(ty) =
+                        self.swagger
+                            .map_reference_type(ref_, is_required, Some(prop))
+                    {
                         ty
                     } else {
                         RustType::Option(Box::new(RustType::Value))
@@ -301,7 +192,8 @@ impl CodeGenerator {
                     let prop_ty_name = format!("{type_name}{prop}");
 
                     let ty = if let Some(ty) =
-                        self.map_item_type(it, is_required, Some(&prop_ty_name))
+                        self.swagger
+                            .map_item_type(it, is_required, Some(&prop_ty_name))
                     {
                         ty
                     } else {
@@ -344,7 +236,7 @@ impl CodeGenerator {
     ) -> std::io::Result<()> {
         debug!("handling array schema `{name}`");
         if let Some(item) = &schema.items {
-            let ty = self.map_item_type(&item, true, Some(&name));
+            let ty = self.swagger.map_item_type(&item, true, Some(&name));
             if ty.is_none() {
                 return Ok(());
             }
