@@ -12,7 +12,8 @@ pub struct Schema {
     pub format: Option<String>,
     pub title: Option<String>,
     pub description: Option<String>,
-    pub required: Option<Vec<String>>,
+    #[serde(default)]
+    pub required: Vec<String>,
     #[serde(rename = "type")]
     pub type_: Option<String>,
     pub items: Option<Item>,
@@ -24,7 +25,8 @@ pub struct Schema {
     pub enum_: Vec<Value>,
 
     #[serde(rename = "allOf")]
-    pub all_of: Option<Vec<Schema>>,
+    #[serde(default)]
+    pub all_of: Vec<Schema>,
 
     // Extensions
     #[serde(rename = "x-go-name")]

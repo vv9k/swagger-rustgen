@@ -501,11 +501,7 @@ impl CodeGenerator {
         let mut props: Vec<_> = props.0.iter().collect();
         props.sort_unstable_by_key(|(k, _)| *k);
         for (prop, item) in &props {
-            let is_required = schema
-                .required
-                .as_ref()
-                .map(|r| r.contains(prop))
-                .unwrap_or_default();
+            let is_required = schema.required.contains(prop);
             debug!("handling property `{prop}`, required: {is_required}");
 
             match item {
@@ -677,29 +673,32 @@ impl CodeGenerator {
     }
 
     pub fn merge_all_of_schema(&self, schema: Schema) -> Schema {
-        if let Some(all_of) = schema.all_of {
+        if !schema.all_of.is_empty() {
             let base_schema = Schema {
                 description: schema.description.clone(),
                 title: schema.title.clone(),
                 properties: Some(Items::default()),
                 ..Default::default()
             };
-            all_of.into_iter().fold(base_schema, |mut acc, schema| {
-                let mut schema = if let Some(ref_) = &schema.ref_ {
-                    self.get_ref_schema(ref_)
-                        .map(|s| s.clone())
-                        .unwrap_or(schema)
-                } else {
-                    schema
-                };
-                if let Some(props) = &mut acc.properties {
-                    if let Some(new_props) = &schema.properties {
-                        props
-                            .0
-                            .extend(new_props.0.iter().map(|(k, v)| (k.clone(), v.clone())));
+            schema
+                .all_of
+                .into_iter()
+                .fold(base_schema, |mut acc, schema| {
+                    let mut schema = if let Some(ref_) = &schema.ref_ {
+                        self.get_ref_schema(ref_)
+                            .map(|s| s.clone())
+                            .unwrap_or(schema)
+                    } else {
+                        schema
+                    };
+                    if let Some(props) = &mut acc.properties {
+                        if let Some(new_props) = &schema.properties {
+                            props
+                                .0
+                                .extend(new_props.0.iter().map(|(k, v)| (k.clone(), v.clone())));
+                        }
                     }
-                }
-                macro_rules! add_if_not_set {
+                    macro_rules! add_if_not_set {
                     ($($field:ident),+) => {
                         $(
                         if acc.$field.is_none() && schema.$field.is_some() {
@@ -708,14 +707,18 @@ impl CodeGenerator {
                         )+
                     };
                 }
-                add_if_not_set!(format, title, description, required, type_);
+                    add_if_not_set!(format, title, description, type_);
 
-                if acc.enum_.is_empty() && !schema.enum_.is_empty() {
-                    acc.enum_.append(&mut schema.enum_);
-                }
+                    if acc.required.is_empty() && !schema.required.is_empty() {
+                        acc.required.append(&mut schema.required);
+                    }
 
-                acc
-            })
+                    if acc.enum_.is_empty() && !schema.enum_.is_empty() {
+                        acc.enum_.append(&mut schema.enum_);
+                    }
+
+                    acc
+                })
         } else {
             schema
         }
