@@ -1,9 +1,5 @@
 use crate::v2::{
-    items::{Item, Items},
-    parameter::Parameter,
-    path::Path,
-    responses::Response,
-    schema::Schema,
+    items::Item, parameter::Parameter, path::Path, responses::Response, schema::Schema,
     trim_reference, Swagger, DEFINITIONS_REF, RESPONSES_REF,
 };
 use crate::{
@@ -61,7 +57,7 @@ impl CodeGenerator {
             trace!("generating {} `{}`", model.schema.type_(), &model.name);
             match model.schema {
                 Item::Reference(ref_) => {
-                    if let Some(schema) = self.get_ref_schema(&ref_) {
+                    if let Some(schema) = self.swagger.get_ref_schema(&ref_) {
                         if !schema.is_object() {
                             continue;
                         }
@@ -81,7 +77,7 @@ impl CodeGenerator {
                     }
                 }
                 Item::Object(schema) => {
-                    let schema = self.merge_all_of_schema(*schema);
+                    let schema = self.swagger.merge_all_of_schema(*schema);
                     self.handle_schema(&model.name, model.parent_name.as_deref(), &schema, writer)?;
                 }
             }
@@ -190,7 +186,7 @@ impl CodeGenerator {
 
             for (name, schema) in definitions {
                 trace!("processing definition `{name}`");
-                let schema = self.merge_all_of_schema(schema.clone());
+                let schema = self.swagger.merge_all_of_schema(schema.clone());
                 self.add_schema_prototype(name, None, &schema);
             }
         } else {
@@ -213,7 +209,7 @@ impl CodeGenerator {
                         if let Some(schema) = &response.schema {
                             let mut schema = schema.clone();
                             schema.description = response.description.clone();
-                            let schema = self.merge_all_of_schema(schema.clone());
+                            let schema = self.swagger.merge_all_of_schema(schema.clone());
                             self.add_schema_prototype(name, None, &schema);
                         }
                     }
@@ -244,7 +240,8 @@ impl CodeGenerator {
                                     if let Some(schema) = &response.schema {
                                         let mut schema = schema.clone();
                                         schema.description = response.description.clone();
-                                        let schema = self.merge_all_of_schema(schema.clone());
+                                        let schema =
+                                            self.swagger.merge_all_of_schema(schema.clone());
                                         self.add_schema_prototype(
                                             &format!(
                                                 "{}{code}Response",
@@ -271,7 +268,8 @@ impl CodeGenerator {
                                         ),
                                         format_type_name(&param.name)
                                     );
-                                    let schema = self.merge_all_of_schema(param.schema.clone());
+                                    let schema =
+                                        self.swagger.merge_all_of_schema(param.schema.clone());
                                     self.add_schema_prototype(&name, None, &schema)
                                 }
                                 _ => {}
@@ -301,25 +299,6 @@ impl CodeGenerator {
         }
     }
 
-    fn get_ref_schema(&self, ref_: &str) -> Option<&Schema> {
-        debug!("getting schema for reference `{ref_}`");
-        if ref_.starts_with(DEFINITIONS_REF) {
-            if let Some(definitions) = &self.swagger.definitions {
-                return definitions.get(ref_);
-            }
-        } else if ref_.starts_with(RESPONSES_REF) {
-            if let Some(responses) = &self.swagger.responses {
-                let response = responses.0.get(ref_)?;
-                match response {
-                    Response::Object(response) => return response.schema.as_ref(),
-                    Response::Reference(ref_) => return self.get_ref_schema(ref_),
-                }
-            }
-        }
-
-        None
-    }
-
     fn map_reference(
         &self,
         ref_: &str,
@@ -327,7 +306,7 @@ impl CodeGenerator {
         parent_name: Option<&str>,
     ) -> Option<RustType> {
         debug!("mapping reference `{ref_}`, required: {is_required}, parent: {parent_name:?}");
-        let schema = self.get_ref_schema(ref_)?;
+        let schema = self.swagger.get_ref_schema(ref_)?;
         trace!("got schema {schema:?}");
         let ref_ = ref_
             .trim_start_matches(RESPONSES_REF)
@@ -670,57 +649,5 @@ impl CodeGenerator {
             writeln!(writer, "{indentation}/// {line}")?;
         }
         Ok(())
-    }
-
-    pub fn merge_all_of_schema(&self, schema: Schema) -> Schema {
-        if !schema.all_of.is_empty() {
-            let base_schema = Schema {
-                description: schema.description.clone(),
-                title: schema.title.clone(),
-                properties: Some(Items::default()),
-                ..Default::default()
-            };
-            schema
-                .all_of
-                .into_iter()
-                .fold(base_schema, |mut acc, schema| {
-                    let mut schema = if let Some(ref_) = &schema.ref_ {
-                        self.get_ref_schema(ref_)
-                            .map(|s| s.clone())
-                            .unwrap_or(schema)
-                    } else {
-                        schema
-                    };
-                    if let Some(props) = &mut acc.properties {
-                        if let Some(new_props) = &schema.properties {
-                            props
-                                .0
-                                .extend(new_props.0.iter().map(|(k, v)| (k.clone(), v.clone())));
-                        }
-                    }
-                    macro_rules! add_if_not_set {
-                    ($($field:ident),+) => {
-                        $(
-                        if acc.$field.is_none() && schema.$field.is_some() {
-                            acc.$field = schema.$field;
-                        }
-                        )+
-                    };
-                }
-                    add_if_not_set!(format, title, description, type_);
-
-                    if acc.required.is_empty() && !schema.required.is_empty() {
-                        acc.required.append(&mut schema.required);
-                    }
-
-                    if acc.enum_.is_empty() && !schema.enum_.is_empty() {
-                        acc.enum_.append(&mut schema.enum_);
-                    }
-
-                    acc
-                })
-        } else {
-            schema
-        }
     }
 }
