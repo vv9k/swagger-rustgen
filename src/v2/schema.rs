@@ -81,6 +81,16 @@ impl Schema {
     pub fn is_array(&self) -> bool {
         self.is_of_type("array")
     }
+
+    pub fn name(&self) -> Option<String> {
+        if let Some(title) = &self.x_go_name {
+            Some(title.to_string())
+        } else if let Some(title) = &self.title {
+            Some(title.to_string())
+        } else {
+            None
+        }
+    }
 }
 
 #[cfg(test)]

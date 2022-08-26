@@ -96,8 +96,13 @@ impl CodeGenerator {
         parent_name: Option<String>,
         schema: &Schema,
     ) {
-        let name = name.into();
-        trace!("adding schema prototype `{name}`");
+        let mut name = name.into();
+        if name.ends_with("InlineItem") {
+            if let Some(schema_name) = schema.name() {
+                name = schema_name;
+            }
+        }
+        trace!("adding schema prototype `{name}`, parent: `{parent_name:?}`");
         if let Some(ref_) = &schema.ref_ {
             self.add_ref_prototype(name, parent_name, ref_.to_string());
             return;
@@ -107,8 +112,9 @@ impl CodeGenerator {
             match items {
                 Item::Object(child_schema) => {
                     if child_schema.is_object() {
-                        trace!("handling child schema {child_schema:?}");
-                        self.add_schema_prototype("", Some(name.clone()), &child_schema)
+                        let name = child_schema.name().unwrap_or(format!("{name}InlineItem"));
+                        trace!("handling child schema `{name}` {child_schema:?}");
+                        self.add_schema_prototype(name, parent_name.clone(), &child_schema)
                     }
                 }
                 _ => {}
@@ -117,27 +123,29 @@ impl CodeGenerator {
 
         if let Some(props) = &schema.properties {
             for (prop_name, prop_schema) in props.0.iter() {
-                trace!("handling property {prop_name}");
+                trace!("handling property {prop_name}, parent: {:?}", &parent_name);
                 match prop_schema {
                     Item::Object(prop_schema) => {
+                        let prop_name = prop_schema
+                            .name()
+                            .unwrap_or(format!("{name}{prop_name}InlineItem"));
+                        trace!("Item::Object property {prop_name}");
                         if prop_schema.is_object() && prop_schema.properties.is_some() {
-                            let prop_name = format!("{name}{prop_name}InlineItem");
+                            trace!("adding object schema {prop_name}");
                             self.add_schema_prototype(prop_name, Some(name.clone()), &prop_schema)
                         } else if prop_schema.is_array() {
                             if let Some(items) = &prop_schema.items {
+                                trace!("adding array schema {prop_name}");
                                 match items {
-                                    Item::Object(prop_schema) if prop_schema.is_object() => {
-                                        let prop_name = format!("{name}{prop_name}InlineItem");
-                                        self.add_schema_prototype(
-                                            prop_name,
+                                    Item::Object(prop_schema) if prop_schema.is_object() => self
+                                        .add_schema_prototype(
+                                            prop_name.clone(),
                                             Some(name.clone()),
                                             &prop_schema,
-                                        )
-                                    }
+                                        ),
                                     _ => {}
                                 }
                             }
-                            let prop_name = format!("{name}{prop_name}InlineItem");
                             error!("skipping {prop_name} {prop_schema:?}")
                         }
                     }
@@ -361,12 +369,10 @@ impl CodeGenerator {
                         return None;
                     }
                 } else if schema.properties.is_some() {
-                    if let Some(title) = &schema.title {
-                        RustType::Custom(title.to_string())
-                    } else if let Some(title) = parent_name {
-                        RustType::Custom(format!("{title}InlineItem"))
-                    } else if let Some(title) = &schema.x_go_name {
-                        RustType::Custom(title.to_string())
+                    if let Some(name) = schema.name() {
+                        RustType::Custom(name)
+                    } else if let Some(parent_name) = &parent_name {
+                        RustType::Custom(format!("{parent_name}InlineItem"))
                     } else {
                         RustType::Value
                     }
@@ -403,15 +409,13 @@ impl CodeGenerator {
         debug!("handling schema {name}, parent: {parent_name:?}");
         trace!("{schema:?}");
         let name = if name.is_empty() {
-            if let Some(title) = &schema.title {
-                title.into()
-            } else if let Some(parent_name) = parent_name {
-                format!("{parent_name}InlineItem")
-            } else {
-                Default::default()
-            }
+            schema.name().unwrap_or(
+                parent_name
+                    .map(|parent_name| format!("{}InlineItem", parent_name))
+                    .unwrap_or(name.to_string()),
+            )
         } else {
-            name.into()
+            name.to_string()
         };
         let type_name = format_type_name(&name);
         trace!("mapped name: {name}, type name: {type_name}");
