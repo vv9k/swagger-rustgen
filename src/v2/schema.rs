@@ -20,7 +20,8 @@ pub struct Schema {
     #[serde(rename = "additionalProperties")]
     pub additional_properties: Option<Item>,
     #[serde(rename = "enum")]
-    pub enum_: Option<Vec<Value>>,
+    #[serde(default)]
+    pub enum_: Vec<Value>,
 
     #[serde(rename = "allOf")]
     pub all_of: Option<Vec<Schema>>,
@@ -41,7 +42,7 @@ impl Schema {
                 properties: Some(Items::default()),
                 ..Default::default()
             };
-            all_of.into_iter().fold(base_schema, |mut acc, schema| {
+            all_of.into_iter().fold(base_schema, |mut acc, mut schema| {
                 if let Some(props) = &mut acc.properties {
                     if let Some(new_props) = &schema.properties {
                         props
@@ -58,7 +59,11 @@ impl Schema {
                         )+
                     };
                 }
-                add_if_not_set!(format, title, description, required, type_, enum_);
+                add_if_not_set!(format, title, description, required, type_);
+
+                if acc.enum_.is_empty() && !schema.enum_.is_empty() {
+                    acc.enum_.append(&mut schema.enum_);
+                }
 
                 acc
             })
@@ -80,6 +85,10 @@ impl Schema {
 
     pub fn is_array(&self) -> bool {
         self.is_of_type("array")
+    }
+
+    pub fn is_enum(&self) -> bool {
+        self.is_of_type("string") && !self.enum_.is_empty()
     }
 
     pub fn name(&self) -> Option<String> {

@@ -1,9 +1,9 @@
 use crate::v2::{
-    items::Item, path::Path, responses::Response, schema::Schema, trim_reference, Swagger,
-    DEFINITIONS_REF, RESPONSES_REF,
+    items::Item, parameter::Parameter, path::Path, responses::Response, schema::Schema,
+    trim_reference, Swagger, DEFINITIONS_REF, RESPONSES_REF,
 };
 use crate::{
-    name::{format_type_name, format_var_name},
+    name::{format_enum_value_name, format_type_name, format_var_name},
     types::RustType,
 };
 
@@ -157,6 +157,9 @@ impl CodeGenerator {
                                 }
                             }
                             error!("skipping {prop_name} {prop_schema:?}")
+                        } else if prop_schema.is_enum() {
+                            trace!("adding enum schema {prop_name}");
+                            self.add_schema_prototype(prop_name, Some(name.clone()), &prop_schema)
                         }
                     }
                     _ => {}
@@ -249,6 +252,23 @@ impl CodeGenerator {
                                             &schema,
                                         );
                                     }
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        for param in &op.parameters {
+                            match param {
+                                Parameter::Body(param) => {
+                                    let name = format!(
+                                        "{}{}Param",
+                                        format_type_name(
+                                            op.operation_id.as_deref().unwrap_or("InlineResponse")
+                                        ),
+                                        format_type_name(&param.name)
+                                    );
+                                    let schema = param.schema.clone().merge_all_of_schema();
+                                    self.add_schema_prototype(&name, None, &schema)
                                 }
                                 _ => {}
                             }
@@ -437,6 +457,8 @@ impl CodeGenerator {
             self.handle_props_schema(&name, schema, writer)?
         } else if schema.is_array() {
             self.handle_array_schema(&name, schema, writer)?
+        } else if schema.is_enum() {
+            self.handle_enum_schema(&name, schema, writer)?
         } else if let Some(ref_) = schema.ref_.as_deref() {
             error!("got unhandled reference schema {ref_}");
         } else if let Some(ty) = self.map_schema_type(schema, None, true, Some(&name)) {
@@ -564,6 +586,55 @@ impl CodeGenerator {
             writeln!(writer, "pub type {type_name} = {ty_str};\n")?;
         }
         Ok(())
+    }
+
+    fn handle_enum_schema(
+        &mut self,
+        name: &str,
+        schema: &Schema,
+        writer: &mut impl std::io::Write,
+    ) -> std::io::Result<()> {
+        debug!("handling enum schema `{name}`");
+
+        let type_name = format_type_name(&name);
+        // type declaration
+
+        self.print_derives(&schema, writer)?;
+        self.print_description(&schema, writer)?;
+        writeln!(writer, "pub enum {type_name} {{")?;
+        for enum_value in &schema.enum_ {
+            if let Some(val) = enum_value.as_str() {
+                writeln!(writer, "    #[serde(rename = \"{val}\")]")?;
+                writeln!(writer, "{},", format_enum_value_name(val))?;
+            }
+        }
+        writeln!(writer, "}}\n")?;
+
+        // implement AsRef<str>
+        writeln!(writer, "impl AsRef<str> for {type_name} {{")?;
+        writeln!(writer, "    fn as_ref(&self) -> &str {{")?;
+        writeln!(writer, "        match self {{")?;
+        for enum_value in &schema.enum_ {
+            if let Some(val) = enum_value.as_str() {
+                writeln!(
+                    writer,
+                    "            {type_name}::{} => \"{val}\",",
+                    format_enum_value_name(val)
+                )?;
+            }
+        }
+        writeln!(writer, "        }}\n    }}\n}}\n")?;
+
+        // implement Display
+        writeln!(
+            writer,
+            r#"impl std::fmt::Display for {type_name} {{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{
+        write!(f, "{{}}", self.as_ref())
+    }}
+}}
+"#
+        )
     }
 
     fn print_derives(
