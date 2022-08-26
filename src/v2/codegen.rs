@@ -61,8 +61,16 @@ impl CodeGenerator {
                         }
                         if let Some(ty) = self.map_reference(&ref_, true, Some(&model.name)) {
                             let type_name = format_type_name(&model.name);
+                            let ty_str = ty.to_string();
+
+                            if type_name == ty_str {
+                                log::warn!(
+                                    "skipping type alias with same name `{type_name} == {ty_str}`"
+                                );
+                                return Ok(());
+                            }
                             self.print_description(&schema, writer)?;
-                            writeln!(writer, "pub type {type_name} = {};\n", ty.to_string())?;
+                            writeln!(writer, "pub type {type_name} = {ty_str};\n")?;
                         }
                     }
                 }
@@ -428,10 +436,16 @@ impl CodeGenerator {
             error!("got unhandled reference schema {ref_}");
         } else if let Some(ty) = self.map_schema_type(schema, None, true, Some(&name)) {
             debug!("handling basic type schema {type_name} = {ty}");
+            let ty_str = ty.to_string();
+
+            if type_name == ty_str {
+                log::warn!("skipping type alias with same name `{type_name} == {ty_str}`");
+                return Ok(());
+            }
+
             if let Some(description) = &schema.description {
                 self.print_doc_comment(description, None, writer)?;
             }
-
             writeln!(writer, "pub type {type_name} = {};\n", ty.to_string())?;
         } else {
             error!("unhandled schema {schema:?}");
@@ -533,8 +547,16 @@ impl CodeGenerator {
             let ty = ty.unwrap();
             let ty = RustType::Vec(Box::new(ty));
             debug!("mapped type for `{name}` - {ty}");
+            let type_name = format_type_name(name);
+            let ty_str = ty.to_string();
+
+            if type_name == ty_str {
+                log::warn!("skipping type alias with same name `{type_name} == {ty_str}`");
+                return Ok(());
+            }
+
             self.print_description(&schema, writer)?;
-            writeln!(writer, "pub type {} = {ty};\n", format_type_name(name))?;
+            writeln!(writer, "pub type {type_name} = {ty_str};\n")?;
         }
         Ok(())
     }
@@ -544,8 +566,7 @@ impl CodeGenerator {
         _schema: &Schema,
         writer: &mut impl std::io::Write,
     ) -> std::io::Result<()> {
-        const DEFAULT_DERIVES: &str =
-            "#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]";
+        const DEFAULT_DERIVES: &str = "#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]";
         writeln!(writer, "{DEFAULT_DERIVES}")
     }
 
