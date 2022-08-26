@@ -1,4 +1,7 @@
-use swagger_rustgen::v2::{codegen::CodeGenerator, Swagger};
+use swagger_rustgen::v2::{
+    codegen::{backend::rust::RustCodegen, CodeGenerator},
+    Swagger,
+};
 
 use clap::{Parser, Subcommand};
 
@@ -33,8 +36,10 @@ fn main() {
                 let yaml = std::fs::read_to_string(swagger_location).unwrap();
                 let swagger: Swagger = serde_yaml::from_str(&yaml).unwrap();
 
-                let mut codegen = CodeGenerator::new(swagger);
-                codegen.generate_models(&mut std::io::stdout()).unwrap();
+                let backend = Box::new(RustCodegen::default());
+                let mut codegen = CodeGenerator::new(swagger, backend);
+                let mut writer = Box::new(std::io::stdout()) as Box<dyn std::io::Write>;
+                codegen.generate_models(&mut writer).unwrap();
             }
         },
     }
