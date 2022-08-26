@@ -15,6 +15,7 @@ use std::cmp::Ordering;
 pub struct CodeGenerator {
     swagger: Swagger,
     models_to_generate: Vec<ModelPrototype>,
+    generated_models: Vec<String>,
 }
 
 impl CodeGenerator {
@@ -22,6 +23,7 @@ impl CodeGenerator {
         Self {
             swagger,
             models_to_generate: vec![],
+            generated_models: vec![],
         }
     }
 
@@ -65,8 +67,16 @@ impl CodeGenerator {
                                 );
                                 continue;
                             }
+
+                            if self.generated_models.contains(&type_name) {
+                                log::warn!(
+                                    "skipping type alias `{type_name}`, a type with the same name already exists"
+                                );
+                                continue;
+                            }
                             self.print_description(&schema, writer)?;
                             writeln!(writer, "pub type {type_name} = {ty_str};\n")?;
+                            self.generated_models.push(type_name);
                         }
                     }
                 }
@@ -232,11 +242,18 @@ impl CodeGenerator {
                 log::warn!("skipping type alias with same name `{type_name} == {ty_str}`");
                 return Ok(());
             }
+            if self.generated_models.contains(&type_name) {
+                log::warn!(
+                    "skipping type alias `{type_name}`, a type with the same name already exists"
+                );
+                return Ok(());
+            }
 
             if let Some(description) = &schema.description {
                 self.print_doc_comment(description, None, writer)?;
             }
             writeln!(writer, "pub type {type_name} = {};\n", ty.to_string())?;
+            self.generated_models.push(type_name);
         } else {
             error!("unhandled schema {schema:?}");
         }
@@ -315,6 +332,7 @@ impl CodeGenerator {
                 }
             }
         }
+        self.generated_models.push(type_name);
         writeln!(writer, "}}\n")
     }
 
@@ -340,9 +358,16 @@ impl CodeGenerator {
                 log::warn!("skipping type alias with same name `{type_name} == {ty_str}`");
                 return Ok(());
             }
+            if self.generated_models.contains(&type_name) {
+                log::warn!(
+                    "skipping type alias `{type_name}`, a type with the same name already exists"
+                );
+                return Ok(());
+            }
 
             self.print_description(&schema, writer)?;
             writeln!(writer, "pub type {type_name} = {ty_str};\n")?;
+            self.generated_models.push(type_name);
         }
         Ok(())
     }
@@ -393,7 +418,9 @@ impl CodeGenerator {
     }}
 }}
 "#
-        )
+        )?;
+        self.generated_models.push(type_name);
+        Ok(())
     }
 
     fn print_derives(
