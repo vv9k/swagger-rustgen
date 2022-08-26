@@ -8,6 +8,7 @@ pub enum Parameter {
     Path(PathParameter),
     Query(QueryParameter),
     Body(BodyParameter),
+    Other(serde_yaml::Mapping),
 }
 
 impl<'de> de::Deserialize<'de> for Parameter {
@@ -34,7 +35,7 @@ impl<'de> de::Deserialize<'de> for Parameter {
                             "body" => serde_yaml::from_value(Value::Mapping(map))
                                 .map(|param: BodyParameter| Parameter::Body(param))
                                 .map_err(|e| de::Error::custom(e.to_string())),
-                            _ => Err(de::Error::custom("unexpected parameter type `{in_}`")),
+                            _ => Ok(Parameter::Other(map)),
                         }
                     }
                 } else {
@@ -53,6 +54,7 @@ impl<'de> de::Deserialize<'de> for Parameter {
 pub struct PathParameter {
     pub name: String,
     pub description: Option<String>,
+    #[serde(rename = "type")]
     pub type_: String,
     #[serde(default)]
     pub required: bool,

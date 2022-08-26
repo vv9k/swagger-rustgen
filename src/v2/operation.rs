@@ -17,5 +17,6 @@ pub struct Operation {
     pub responses: Responses,
     #[serde(default)]
     pub depracated: bool,
+    #[serde(default)]
     pub parameters: Vec<Parameter>,
 }
