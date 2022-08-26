@@ -83,14 +83,19 @@ impl CodeGenerator {
                 }
                 Item::Object(schema) => {
                     let schema = self.swagger.merge_all_of_schema(*schema);
-                    self.handle_schema(&model.name, model.parent_name.as_deref(), &schema, writer)?;
+                    self.generate_schema(
+                        &model.name,
+                        model.parent_name.as_deref(),
+                        &schema,
+                        writer,
+                    )?;
                 }
             }
         }
         Ok(())
     }
 
-    fn handle_schema(
+    fn generate_schema(
         &mut self,
         name: &str,
         parent_name: Option<&str>,
@@ -112,11 +117,11 @@ impl CodeGenerator {
         trace!("mapped name: {name}, type name: {type_name}");
 
         if schema.properties.is_some() {
-            self.handle_props_schema(&name, schema, writer)?
+            self.generate_props_schema(&name, schema, writer)?
         } else if schema.is_array() {
-            self.handle_array_schema(&name, schema, writer)?
+            self.generate_array_schema(&name, schema, writer)?
         } else if schema.is_enum() {
-            self.handle_enum_schema(&name, schema, writer)?
+            self.generate_enum_schema(&name, schema, writer)?
         } else if let Some(ref_) = schema.ref_.as_deref() {
             error!("got unhandled reference schema {ref_}");
         } else if let Some(ty) = self
@@ -149,7 +154,7 @@ impl CodeGenerator {
         Ok(())
     }
 
-    fn handle_props_schema(
+    fn generate_props_schema(
         &mut self,
         name: &str,
         schema: &Schema,
@@ -228,7 +233,7 @@ impl CodeGenerator {
         writeln!(writer, "}}\n")
     }
 
-    fn handle_array_schema(
+    fn generate_array_schema(
         &mut self,
         name: &str,
         schema: &Schema,
@@ -264,7 +269,7 @@ impl CodeGenerator {
         Ok(())
     }
 
-    fn handle_enum_schema(
+    fn generate_enum_schema(
         &mut self,
         name: &str,
         schema: &Schema,
