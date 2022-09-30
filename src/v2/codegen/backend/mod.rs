@@ -9,4 +9,10 @@ pub trait CodegenBackend {
         swagger: &Swagger,
         writer: &mut Box<dyn std::io::Write>,
     ) -> std::io::Result<()>;
+
+    fn generate_helpers(
+        &mut self,
+        swagger: &Swagger,
+        writer: &mut Box<dyn std::io::Write>,
+    ) -> std::io::Result<()>;
 }

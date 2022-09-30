@@ -32,6 +32,8 @@ impl CodeGenerator {
     }
 
     fn generate(&mut self, writer: &mut Box<dyn std::io::Write>) -> std::io::Result<()> {
+        self.backend.generate_helpers(&self.swagger, writer)?;
+
         let mut models = std::mem::take(&mut self.models_to_generate);
 
         // Generate object schemas first so that all references are valid

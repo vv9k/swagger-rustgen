@@ -28,6 +28,29 @@ impl CodegenBackend for RustCodegen {
         }
         Ok(())
     }
+
+    fn generate_helpers(
+        &mut self,
+        _swagger: &Swagger,
+        writer: &mut Box<dyn std::io::Write>,
+    ) -> std::io::Result<()> {
+        write!(
+            writer,
+            r#"
+fn deserialize_nonoptional_vec<'de, D: serde::de::Deserializer<'de>, T: serde::de::DeserializeOwned>(
+    d: D,
+) -> Result<Vec<T>, D::Error> {{
+    serde::de::Deserialize::deserialize(d).map(|x: Option<_>| x.unwrap_or_default())
+}}
+
+fn deserialize_nonoptional_map<'de, D: serde::de::Deserializer<'de>, T: serde::de::DeserializeOwned>(
+    d: D,
+) -> Result<HashMap<String, T>, D::Error> {{
+    serde::de::Deserialize::deserialize(d).map(|x: Option<_>| x.unwrap_or_default())
+}}
+            "#
+        )
+    }
 }
 
 impl RustCodegen {
@@ -197,6 +220,18 @@ impl RustCodegen {
 
                     if matches!(ty, RustType::Vec(_) | RustType::Object(_)) {
                         writeln!(writer, "    #[serde(default)]")?;
+                    }
+                    if matches!(ty, RustType::Vec(_)) {
+                        writeln!(
+                            writer,
+                            "    #[serde(deserialize_with = \"deserialize_nonoptional_vec\")]"
+                        )?;
+                    }
+                    if matches!(ty, RustType::Object(_)) {
+                        writeln!(
+                            writer,
+                            "    #[serde(deserialize_with = \"deserialize_nonoptional_map\")]"
+                        )?;
                     }
 
                     if !is_required {
