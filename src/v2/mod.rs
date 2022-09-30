@@ -148,7 +148,7 @@ impl Swagger {
                 .format
                 .as_ref()
                 .and_then(|format| RustType::from_integer_format(format))
-                .unwrap_or(RustType::USize),
+                .unwrap_or(RustType::ISize),
             "string" => match schema
                 .format
                 .as_ref()
