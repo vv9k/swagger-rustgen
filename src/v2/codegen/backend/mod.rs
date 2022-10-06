@@ -1,4 +1,4 @@
-//pub mod python;
+pub mod python;
 pub mod rust;
 
 use crate::v2::{codegen::ModelPrototype, Swagger, Type};
