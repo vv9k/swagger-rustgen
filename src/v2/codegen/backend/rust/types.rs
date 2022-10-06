@@ -1,4 +1,4 @@
-use crate::name::format_type_name;
+use crate::v2::codegen::backend::rust::format_type_name;
 
 use std::fmt;
 

@@ -1,9 +1,11 @@
-use crate::v2::codegen::{backend::CodegenBackend, ModelPrototype};
-use crate::v2::{items::Item, schema::Schema, Swagger};
-use crate::{
-    name::{format_enum_value_name, format_type_name, format_var_name},
-    types::RustType,
+use crate::v2::codegen::{
+    backend::{
+        rust::{format_enum_value_name, format_type_name, format_var_name, RustType},
+        CodegenBackend,
+    },
+    ModelPrototype,
 };
+use crate::v2::{items::Item, schema::Schema, Swagger};
 
 use log::{debug, error, trace};
 

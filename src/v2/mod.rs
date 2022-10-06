@@ -10,7 +10,7 @@ pub mod schema;
 pub const DEFINITIONS_REF: &str = "#/definitions/";
 pub const RESPONSES_REF: &str = "#/responses/";
 
-use crate::types::RustType;
+use codegen::backend::rust::RustType;
 use items::{Item, Items};
 use responses::Response;
 use schema::Schema;
