@@ -1,6 +1,6 @@
 use crate::v2::codegen::{
     backend::{
-        rust::{format_enum_value_name, format_type_name, format_var_name, RustType},
+        rust::{self, format_enum_value_name, format_type_name, format_var_name},
         CodegenBackend,
     },
     ModelPrototype,
@@ -10,15 +10,15 @@ use crate::v2::{Item, Schema, Swagger};
 use log::{debug, error, trace};
 
 #[derive(Default)]
-pub struct RustCodegen {
+pub struct Codegen {
     generated_models: Vec<String>,
 }
 
-impl CodegenBackend<RustType> for RustCodegen {
+impl CodegenBackend<rust::Type> for Codegen {
     fn generate_model(
         &mut self,
         model: ModelPrototype,
-        swagger: &Swagger<RustType>,
+        swagger: &Swagger<rust::Type>,
         writer: &mut Box<dyn std::io::Write>,
     ) -> std::io::Result<()> {
         trace!("generating {} `{}`", model.schema.type_(), &model.name);
@@ -33,7 +33,7 @@ impl CodegenBackend<RustType> for RustCodegen {
 
     fn generate_helpers(
         &mut self,
-        _swagger: &Swagger<RustType>,
+        _swagger: &Swagger<rust::Type>,
         writer: &mut Box<dyn std::io::Write>,
     ) -> std::io::Result<()> {
         write!(
@@ -55,12 +55,12 @@ fn deserialize_nonoptional_map<'de, D: serde::de::Deserializer<'de>, T: serde::d
     }
 }
 
-impl RustCodegen {
+impl Codegen {
     fn generate_reference_model(
         &mut self,
         ref_: &str,
         model: &ModelPrototype,
-        swagger: &Swagger<RustType>,
+        swagger: &Swagger<rust::Type>,
         writer: &mut Box<dyn std::io::Write>,
     ) -> std::io::Result<()> {
         if let Some(schema) = swagger.get_ref_schema(ref_) {
@@ -95,7 +95,7 @@ impl RustCodegen {
         &mut self,
         schema: &Schema,
         model: &ModelPrototype,
-        swagger: &Swagger<RustType>,
+        swagger: &Swagger<rust::Type>,
         writer: &mut Box<dyn std::io::Write>,
     ) -> std::io::Result<()> {
         let schema = swagger.merge_all_of_schema(schema.clone());
@@ -113,7 +113,7 @@ impl RustCodegen {
         name: &str,
         parent_name: Option<&str>,
         schema: &Schema,
-        swagger: &Swagger<RustType>,
+        swagger: &Swagger<rust::Type>,
         writer: &mut Box<dyn std::io::Write>,
     ) -> std::io::Result<()> {
         debug!("handling schema {name}, parent: {parent_name:?}");
@@ -169,7 +169,7 @@ impl RustCodegen {
         &mut self,
         name: &str,
         schema: &Schema,
-        swagger: &Swagger<RustType>,
+        swagger: &Swagger<rust::Type>,
         writer: &mut Box<dyn std::io::Write>,
     ) -> std::io::Result<()> {
         debug!("handling property schema `{name}`");
@@ -193,7 +193,7 @@ impl RustCodegen {
                     {
                         ty
                     } else {
-                        RustType::Option(Box::new(RustType::Value))
+                        rust::Type::Option(Box::new(rust::Type::Value))
                     };
                     let formatted_var = format_var_name(prop);
                     if &&formatted_var != prop {
@@ -212,7 +212,7 @@ impl RustCodegen {
                     {
                         ty
                     } else {
-                        RustType::Option(Box::new(RustType::Value))
+                        rust::Type::Option(Box::new(rust::Type::Value))
                     };
                     debug!("mapped type for `{name}` `{prop}` - {ty}");
 
@@ -220,16 +220,16 @@ impl RustCodegen {
                         writeln!(writer, "    #[serde(rename = \"{prop}\")]")?;
                     }
 
-                    if matches!(ty, RustType::Vec(_) | RustType::Object(_)) {
+                    if matches!(ty, rust::Type::Vec(_) | rust::Type::Object(_)) {
                         writeln!(writer, "    #[serde(default)]")?;
                     }
-                    if matches!(ty, RustType::Vec(_)) {
+                    if matches!(ty, rust::Type::Vec(_)) {
                         writeln!(
                             writer,
                             "    #[serde(deserialize_with = \"deserialize_nonoptional_vec\")]"
                         )?;
                     }
-                    if matches!(ty, RustType::Object(_)) {
+                    if matches!(ty, rust::Type::Object(_)) {
                         writeln!(
                             writer,
                             "    #[serde(deserialize_with = \"deserialize_nonoptional_map\")]"
@@ -259,7 +259,7 @@ impl RustCodegen {
         &mut self,
         name: &str,
         schema: &Schema,
-        swagger: &Swagger<RustType>,
+        swagger: &Swagger<rust::Type>,
         writer: &mut Box<dyn std::io::Write>,
     ) -> std::io::Result<()> {
         debug!("handling array schema `{name}`");
@@ -269,7 +269,7 @@ impl RustCodegen {
                 return Ok(());
             }
             let ty = ty.unwrap();
-            let ty = RustType::Vec(Box::new(ty));
+            let ty = rust::Type::Vec(Box::new(ty));
             debug!("mapped type for `{name}` - {ty}");
             let type_name = format_type_name(name);
             let ty_str = ty.to_string();
@@ -296,7 +296,7 @@ impl RustCodegen {
         &mut self,
         name: &str,
         schema: &Schema,
-        _swagger: &Swagger<RustType>,
+        _swagger: &Swagger<rust::Type>,
         writer: &mut Box<dyn std::io::Write>,
     ) -> std::io::Result<()> {
         debug!("handling enum schema `{name}`");

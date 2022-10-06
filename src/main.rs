@@ -1,8 +1,5 @@
 use swagger_gen::v2::{
-    codegen::{
-        backend::rust::{RustCodegen, RustType},
-        CodeGenerator,
-    },
+    codegen::{backend::rust, CodeGenerator},
     Swagger,
 };
 
@@ -65,8 +62,8 @@ fn main() {
 
                 let mut codegen = match language {
                     Language::Rust => {
-                        let swagger: Swagger<RustType> = serde_yaml::from_str(&yaml).unwrap();
-                        let backend = Box::new(RustCodegen::default());
+                        let swagger: Swagger<rust::Type> = serde_yaml::from_str(&yaml).unwrap();
+                        let backend = Box::new(rust::Codegen::default());
                         CodeGenerator::new(swagger, backend)
                     }
                 };

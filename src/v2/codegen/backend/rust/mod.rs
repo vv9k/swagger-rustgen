@@ -1,8 +1,8 @@
 mod backend;
 mod types;
 
-pub use backend::RustCodegen;
-pub use types::RustType;
+pub use backend::Codegen;
+pub use types::Type;
 
 use crate::{Case, Casing};
 

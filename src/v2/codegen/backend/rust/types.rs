@@ -5,7 +5,7 @@ use log::trace;
 use std::fmt;
 
 #[derive(Clone)]
-pub enum RustType {
+pub enum Type {
     I8,
     U8,
     I16,
@@ -21,16 +21,16 @@ pub enum RustType {
     String,
     DateTime,
     Bool,
-    Vec(Box<RustType>),
-    Object(Box<RustType>),
-    Option(Box<RustType>),
+    Vec(Box<Type>),
+    Object(Box<Type>),
+    Option(Box<Type>),
     Custom(String),
     Value,
 }
 
-impl fmt::Display for RustType {
+impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use RustType::*;
+        use Type::*;
         match self {
             I8 => write!(f, "i8"),
             U8 => write!(f, "u8"),
@@ -56,19 +56,19 @@ impl fmt::Display for RustType {
     }
 }
 
-impl RustType {
+impl Type {
     pub fn from_integer_format(format: &str) -> Option<Self> {
         let ty = match format {
-            "int" => RustType::ISize,
-            "uint" => RustType::USize,
-            "int64" => RustType::I64,
-            "uint64" => RustType::U64,
-            "int32" => RustType::I32,
-            "uint32" => RustType::U32,
-            "int16" => RustType::I16,
-            "uint16" => RustType::U16,
-            "int8" => RustType::I8,
-            "uint8" => RustType::U8,
+            "int" => Type::ISize,
+            "uint" => Type::USize,
+            "int64" => Type::I64,
+            "uint64" => Type::U64,
+            "int32" => Type::I32,
+            "uint32" => Type::U32,
+            "int16" => Type::I16,
+            "uint16" => Type::U16,
+            "int8" => Type::I8,
+            "uint8" => Type::U8,
             _ => return None,
         };
 
@@ -76,7 +76,7 @@ impl RustType {
     }
 }
 
-impl crate::v2::Type for RustType {
+impl crate::v2::Type for Type {
     fn format_name(name: &str) -> String {
         format_type_name(name)
     }
@@ -96,25 +96,25 @@ impl crate::v2::Type for RustType {
             "integer" => schema
                 .format
                 .as_ref()
-                .and_then(|format| RustType::from_integer_format(format))
-                .unwrap_or(RustType::ISize),
+                .and_then(|format| Type::from_integer_format(format))
+                .unwrap_or(Type::ISize),
             "string" => match schema
                 .format
                 .as_ref()
                 .map(|fmt| fmt.to_lowercase())
                 .as_deref()
             {
-                Some("date-time") | Some("datetime") | Some("date time") => RustType::DateTime,
-                Some("binary") => RustType::Vec(Box::new(RustType::U8)),
-                _ => RustType::String,
+                Some("date-time") | Some("datetime") | Some("date time") => Type::DateTime,
+                Some("binary") => Type::Vec(Box::new(Type::U8)),
+                _ => Type::String,
             },
-            "boolean" => RustType::Bool,
+            "boolean" => Type::Bool,
             "array" => {
                 let ty = if let Some(ref_) = ref_ {
-                    RustType::Custom(trim_reference(ref_).to_string())
+                    Type::Custom(trim_reference(ref_).to_string())
                 } else if let Some(item) = &schema.items {
                     if let Some(ty) = Self::map_item_type(item, true, parent_name, swagger) {
-                        RustType::Vec(Box::new(ty))
+                        Type::Vec(Box::new(ty))
                     } else {
                         return None;
                     }
@@ -126,37 +126,37 @@ impl crate::v2::Type for RustType {
             }
             "object" => {
                 let ty = if let Some(ref_) = ref_ {
-                    RustType::Custom(trim_reference(ref_).to_string())
+                    Type::Custom(trim_reference(ref_).to_string())
                 } else if let Some(item) = &schema.additional_properties {
                     if let Some(ty) = Self::map_item_type(item, true, parent_name, swagger) {
-                        RustType::Object(Box::new(ty))
+                        Type::Object(Box::new(ty))
                     } else {
                         return None;
                     }
                 } else if let Some(item) = &schema.items {
                     if let Some(ty) = Self::map_item_type(item, true, parent_name, swagger) {
-                        RustType::Object(Box::new(ty))
+                        Type::Object(Box::new(ty))
                     } else {
                         return None;
                     }
                 } else if schema.properties.is_some() {
                     if let Some(name) = schema.name() {
-                        RustType::Custom(name)
+                        Type::Custom(name)
                     } else if let Some(parent_name) = &parent_name {
-                        RustType::Custom(format!("{parent_name}InlineItem"))
+                        Type::Custom(format!("{parent_name}InlineItem"))
                     } else {
-                        RustType::Value
+                        Type::Value
                     }
                 } else {
-                    RustType::Value
+                    Type::Value
                 };
 
                 ty
             }
             "number" => {
                 let ty = match schema.format.as_deref() {
-                    Some("double") => RustType::F64,
-                    Some("float") => RustType::F32,
+                    Some("double") => Type::F64,
+                    Some("float") => Type::F32,
                     _ => return None,
                 };
                 ty
@@ -164,7 +164,7 @@ impl crate::v2::Type for RustType {
             _ => return None,
         };
         if !is_required {
-            ty = RustType::Option(Box::new(ty));
+            ty = Type::Option(Box::new(ty));
         }
         trace!("mapped to {ty}");
         Some(ty)
