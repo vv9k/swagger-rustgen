@@ -1,6 +1,6 @@
 use crate::v2::codegen::{
     backend::{
-        python::{self, format_type_name, format_var_name},
+        python::{self, format_enum_value_name, format_type_name, format_var_name},
         CodegenBackend,
     },
     ModelPrototype,
@@ -41,7 +41,7 @@ impl CodegenBackend<python::Type> for Codegen {
             r#"
 import typing
 import json
-from typing import List, Dict, TypeAlias, Optional
+from typing import List, Dict, TypeAlias, Optional, Enum
 from dataclasses import dataclass
 from json import JSONEncoder, JSONDecoder
 "#
@@ -293,7 +293,7 @@ impl Codegen {
             }
         }
         if has_comments {
-            writeln!(writer, "    \"\"\"")?;
+            writeln!(writer, "\"\"\"")?;
         }
 
         for prop in &required {
@@ -363,13 +363,27 @@ impl Codegen {
     fn generate_enum_schema(
         &mut self,
         name: &str,
-        _schema: &Schema,
+        schema: &Schema,
         _swagger: &Swagger<python::Type>,
-        _writer: &mut Box<dyn std::io::Write>,
+        writer: &mut Box<dyn std::io::Write>,
     ) -> std::io::Result<()> {
         debug!("handling enum schema `{name}`");
 
         let type_name = format_type_name(&name);
+        writeln!(writer, "class {type_name}(Enum):")?;
+        if let Some(description) = &schema.description {
+            writeln!(writer, "    \"\"\"{}\"\"\"", description.trim_end())?;
+        }
+        for enum_value in &schema.enum_ {
+            if let Some(val) = enum_value.as_str() {
+                writeln!(
+                    writer,
+                    "    {} = \"{}\"",
+                    format_enum_value_name(val),
+                    if val.is_empty() { "empty" } else { val }
+                )?;
+            }
+        }
         self.generated_models.push(type_name);
         Ok(())
     }
