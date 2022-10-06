@@ -1,4 +1,4 @@
-use swagger_rustgen::v2::{
+use swagger_gen::v2::{
     codegen::{
         backend::rust::{RustCodegen, RustType},
         CodeGenerator,
@@ -10,7 +10,7 @@ use clap::{Parser, Subcommand};
 use std::fmt;
 
 #[derive(Parser)]
-struct SwaggerRustgen {
+struct SwaggerGen {
     #[clap(subcommand)]
     subcommand: Command,
 }
@@ -52,10 +52,10 @@ impl fmt::Display for Language {
 }
 
 fn main() {
-    let rustgen = SwaggerRustgen::parse();
+    let gen = SwaggerGen::parse();
     pretty_env_logger::init();
 
-    match rustgen.subcommand {
+    match gen.subcommand {
         Command::Generate { target } => match target {
             GenerateTarget::Models {
                 swagger_location,

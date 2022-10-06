@@ -1,11 +1,11 @@
 [package]
-name = "swagger-rustgen"
+name = "swagger-gen"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
 path = "src/main.rs"
-name = "swagger-rustgen"
+name = "swagger-gen"
 
 [dependencies]
 serde_yaml = "0.8"
