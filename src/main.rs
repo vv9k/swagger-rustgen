@@ -1,5 +1,8 @@
 use swagger_gen::v2::{
-    codegen::{backend::rust, CodeGenerator},
+    codegen::{
+        backend::{python, rust},
+        CodeGenerator,
+    },
     Swagger,
 };
 
@@ -32,12 +35,14 @@ enum GenerateTarget {
 #[derive(clap::ValueEnum, Clone)]
 enum Language {
     Rust,
+    Python,
 }
 
 impl AsRef<str> for Language {
     fn as_ref(&self) -> &str {
         match self {
             Language::Rust => "rust",
+            Language::Python => "python",
         }
     }
 }
@@ -60,15 +65,22 @@ fn main() {
             } => {
                 let yaml = std::fs::read_to_string(swagger_location).unwrap();
 
-                let mut codegen = match language {
+                match language {
                     Language::Rust => {
                         let swagger: Swagger<rust::Type> = serde_yaml::from_str(&yaml).unwrap();
                         let backend = Box::new(rust::Codegen::default());
-                        CodeGenerator::new(swagger, backend)
+                        let mut codegen = CodeGenerator::new(swagger, backend);
+                        let mut writer = Box::new(std::io::stdout()) as Box<dyn std::io::Write>;
+                        codegen.generate_models(&mut writer).unwrap();
+                    }
+                    Language::Python => {
+                        let swagger: Swagger<python::Type> = serde_yaml::from_str(&yaml).unwrap();
+                        let backend = Box::new(python::Codegen::default());
+                        let mut codegen = CodeGenerator::new(swagger, backend);
+                        let mut writer = Box::new(std::io::stdout()) as Box<dyn std::io::Write>;
+                        codegen.generate_models(&mut writer).unwrap();
                     }
                 };
-                let mut writer = Box::new(std::io::stdout()) as Box<dyn std::io::Write>;
-                codegen.generate_models(&mut writer).unwrap();
             }
         },
     }
