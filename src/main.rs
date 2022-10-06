@@ -1,5 +1,8 @@
 use swagger_rustgen::v2::{
-    codegen::{backend::rust::RustCodegen, CodeGenerator},
+    codegen::{
+        backend::rust::{RustCodegen, RustType},
+        CodeGenerator,
+    },
     Swagger,
 };
 
@@ -34,7 +37,7 @@ fn main() {
         Command::Generate { target } => match target {
             GenerateTarget::Models { swagger_location } => {
                 let yaml = std::fs::read_to_string(swagger_location).unwrap();
-                let swagger: Swagger = serde_yaml::from_str(&yaml).unwrap();
+                let swagger: Swagger<RustType> = serde_yaml::from_str(&yaml).unwrap();
 
                 let backend = Box::new(RustCodegen::default());
                 let mut codegen = CodeGenerator::new(swagger, backend);

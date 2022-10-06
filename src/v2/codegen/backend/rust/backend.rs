@@ -5,7 +5,7 @@ use crate::v2::codegen::{
     },
     ModelPrototype,
 };
-use crate::v2::{items::Item, schema::Schema, Swagger};
+use crate::v2::{Item, Schema, Swagger};
 
 use log::{debug, error, trace};
 
@@ -14,11 +14,11 @@ pub struct RustCodegen {
     generated_models: Vec<String>,
 }
 
-impl CodegenBackend for RustCodegen {
+impl CodegenBackend<RustType> for RustCodegen {
     fn generate_model(
         &mut self,
         model: ModelPrototype,
-        swagger: &Swagger,
+        swagger: &Swagger<RustType>,
         writer: &mut Box<dyn std::io::Write>,
     ) -> std::io::Result<()> {
         trace!("generating {} `{}`", model.schema.type_(), &model.name);
@@ -33,7 +33,7 @@ impl CodegenBackend for RustCodegen {
 
     fn generate_helpers(
         &mut self,
-        _swagger: &Swagger,
+        _swagger: &Swagger<RustType>,
         writer: &mut Box<dyn std::io::Write>,
     ) -> std::io::Result<()> {
         write!(
@@ -60,7 +60,7 @@ impl RustCodegen {
         &mut self,
         ref_: &str,
         model: &ModelPrototype,
-        swagger: &Swagger,
+        swagger: &Swagger<RustType>,
         writer: &mut Box<dyn std::io::Write>,
     ) -> std::io::Result<()> {
         if let Some(schema) = swagger.get_ref_schema(ref_) {
@@ -95,7 +95,7 @@ impl RustCodegen {
         &mut self,
         schema: &Schema,
         model: &ModelPrototype,
-        swagger: &Swagger,
+        swagger: &Swagger<RustType>,
         writer: &mut Box<dyn std::io::Write>,
     ) -> std::io::Result<()> {
         let schema = swagger.merge_all_of_schema(schema.clone());
@@ -113,7 +113,7 @@ impl RustCodegen {
         name: &str,
         parent_name: Option<&str>,
         schema: &Schema,
-        swagger: &Swagger,
+        swagger: &Swagger<RustType>,
         writer: &mut Box<dyn std::io::Write>,
     ) -> std::io::Result<()> {
         debug!("handling schema {name}, parent: {parent_name:?}");
@@ -169,7 +169,7 @@ impl RustCodegen {
         &mut self,
         name: &str,
         schema: &Schema,
-        swagger: &Swagger,
+        swagger: &Swagger<RustType>,
         writer: &mut Box<dyn std::io::Write>,
     ) -> std::io::Result<()> {
         debug!("handling property schema `{name}`");
@@ -259,7 +259,7 @@ impl RustCodegen {
         &mut self,
         name: &str,
         schema: &Schema,
-        swagger: &Swagger,
+        swagger: &Swagger<RustType>,
         writer: &mut Box<dyn std::io::Write>,
     ) -> std::io::Result<()> {
         debug!("handling array schema `{name}`");
@@ -296,7 +296,7 @@ impl RustCodegen {
         &mut self,
         name: &str,
         schema: &Schema,
-        _swagger: &Swagger,
+        _swagger: &Swagger<RustType>,
         writer: &mut Box<dyn std::io::Write>,
     ) -> std::io::Result<()> {
         debug!("handling enum schema `{name}`");

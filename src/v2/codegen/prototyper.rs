@@ -1,9 +1,10 @@
-use crate::v2::codegen::backend::rust::format_type_name;
 use crate::v2::{
     items::Item, parameter::Parameter, path::Path, responses::Response, schema::Schema, Swagger,
+    Type,
 };
 
 use log::{debug, error, trace};
+use std::marker::PhantomData;
 
 #[derive(Debug)]
 pub struct ModelPrototype {
@@ -13,21 +14,25 @@ pub struct ModelPrototype {
 }
 
 #[derive(Debug)]
-pub struct Prototyper {
+pub struct Prototyper<T: Type> {
     prototypes: Vec<ModelPrototype>,
+    _data: PhantomData<T>,
 }
 
-impl Default for Prototyper {
+impl<T: Type> Default for Prototyper<T> {
     fn default() -> Self {
-        Self { prototypes: vec![] }
+        Self {
+            prototypes: vec![],
+            _data: PhantomData,
+        }
     }
 }
 
-impl Prototyper {
-    pub fn generate_prototypes(mut self, swagger: Swagger) -> Vec<ModelPrototype> {
-        self.add_definition_models(&swagger);
-        self.add_responses_models(&swagger);
-        self.add_paths_models(&swagger);
+impl<T: Type> Prototyper<T> {
+    pub fn generate_prototypes(mut self, swagger: &Swagger<T>) -> Vec<ModelPrototype> {
+        self.add_definition_models(swagger);
+        self.add_responses_models(swagger);
+        self.add_paths_models(swagger);
         self.prototypes
     }
 
@@ -122,7 +127,7 @@ impl Prototyper {
         self.prototypes.push(prototype);
     }
 
-    fn add_definition_models(&mut self, swagger: &Swagger) {
+    fn add_definition_models(&mut self, swagger: &Swagger<T>) {
         debug!("adding definition models");
         if let Some(definitions) = &swagger.definitions {
             trace!("definitions found");
@@ -140,7 +145,7 @@ impl Prototyper {
         }
     }
 
-    fn add_responses_models(&mut self, swagger: &Swagger) {
+    fn add_responses_models(&mut self, swagger: &Swagger<T>) {
         debug!("adding responses models");
         if let Some(responses) = &swagger.responses {
             trace!("responses found");
@@ -169,7 +174,7 @@ impl Prototyper {
         }
     }
 
-    fn add_paths_models(&mut self, swagger: &Swagger) {
+    fn add_paths_models(&mut self, swagger: &Swagger<T>) {
         debug!("adding paths models");
         if let Some(paths) = &swagger.paths {
             debug!("paths found");
@@ -208,10 +213,10 @@ impl Prototyper {
                                 Parameter::Body(param) => {
                                     let name = format!(
                                         "{}{}Param",
-                                        format_type_name(
+                                        T::format_name(
                                             op.operation_id.as_deref().unwrap_or("InlineResponse")
                                         ),
-                                        format_type_name(&param.name)
+                                        T::format_name(&param.name)
                                     );
                                     let schema = swagger.merge_all_of_schema(param.schema.clone());
                                     self.add_schema_prototype(&name, None, &schema)

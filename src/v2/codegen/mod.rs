@@ -1,20 +1,20 @@
 pub mod backend;
 mod prototyper;
 
-use crate::v2::Swagger;
+use crate::v2::{Swagger, Type};
 use backend::CodegenBackend;
 use prototyper::{ModelPrototype, Prototyper};
 
 use std::cmp::Ordering;
 
-pub struct CodeGenerator {
-    swagger: Swagger,
+pub struct CodeGenerator<T: Type> {
+    swagger: Swagger<T>,
     models_to_generate: Vec<ModelPrototype>,
-    backend: Box<dyn CodegenBackend>,
+    backend: Box<dyn CodegenBackend<T>>,
 }
 
-impl CodeGenerator {
-    pub fn new(swagger: Swagger, backend: Box<dyn CodegenBackend>) -> Self {
+impl<T: Type> CodeGenerator<T> {
+    pub fn new(swagger: Swagger<T>, backend: Box<dyn CodegenBackend<T>>) -> Self {
         Self {
             swagger,
             models_to_generate: vec![],
@@ -23,9 +23,8 @@ impl CodeGenerator {
     }
 
     pub fn generate_models(&mut self, writer: &mut Box<dyn std::io::Write>) -> std::io::Result<()> {
-        let swagger = self.swagger.clone();
         let p = Prototyper::default();
-        self.models_to_generate = p.generate_prototypes(swagger);
+        self.models_to_generate = p.generate_prototypes(&self.swagger);
         self.generate(writer)?;
 
         Ok(())
