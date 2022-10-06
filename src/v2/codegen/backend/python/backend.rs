@@ -190,12 +190,15 @@ impl Codegen {
         let mut props: Vec<_> = props.0.iter().collect();
         props.sort_unstable_by_key(|(k, _)| *k);
 
-        let mut parsed_props = vec![];
+        let mut required = vec![];
+        let mut optional = vec![];
+        let mut has_comments = schema.description.is_some();
+
         for (prop, item) in &props {
             let is_required = schema.required.contains(prop);
             debug!("handling property `{prop}`");
 
-            match item {
+            let prop = match item {
                 Item::Reference(ref_) => {
                     trace!("`{prop}` is a reference to `ref_`");
                     let ty = if let Some(ty) =
@@ -206,11 +209,11 @@ impl Codegen {
                         python::Type::Value
                     };
                     let name = format_var_name(prop);
-                    parsed_props.push(Prop {
+                    Prop {
                         comment: None,
                         name,
                         ty,
-                    });
+                    }
                 }
                 it @ Item::Object(item) => {
                     trace!("`{prop}` is an object {item:?}");
@@ -227,28 +230,22 @@ impl Codegen {
                     };
                     debug!("mapped type for `{name}` `{prop}` - {ty}");
 
-                    parsed_props.push(Prop {
+                    Prop {
                         comment: item.description.as_ref(),
                         name,
                         ty,
-                    });
+                    }
                 }
-            }
-        }
-
-        let mut required = vec![];
-        let mut optional = vec![];
-        let mut has_comments = schema.description.is_some();
-        parsed_props.into_iter().for_each(|prop| {
+            };
             if prop.comment.is_some() {
                 has_comments = true;
             }
             if let python::Type::Optional(_) = prop.ty {
-                optional.push(prop)
+                optional.push(prop);
             } else {
-                required.push(prop)
+                required.push(prop);
             }
-        });
+        }
 
         self.print_json_encoders(&type_name, writer)?;
 
