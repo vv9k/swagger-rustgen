@@ -53,6 +53,32 @@ impl fmt::Display for Language {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+enum DataFormat {
+    Json,
+    Yaml,
+}
+
+impl DataFormat {
+    pub fn from_extension(ext: &str) -> Option<Self> {
+        match ext {
+            "json" => Some(Self::Json),
+            "yaml" | "yml" => Some(Self::Yaml),
+            _ => None,
+        }
+    }
+
+    pub fn deserialize_from_str<T: serde::de::DeserializeOwned>(
+        self,
+        data: &str,
+    ) -> Result<T, Box<dyn std::error::Error>> {
+        match self {
+            DataFormat::Json => Ok(serde_json::from_str::<T>(&data)?),
+            DataFormat::Yaml => Ok(serde_yaml::from_str::<T>(&data)?),
+        }
+    }
+}
+
 fn main() {
     let gen = SwaggerGen::parse();
     pretty_env_logger::init();
@@ -63,18 +89,24 @@ fn main() {
                 swagger_location,
                 language,
             } => {
-                let yaml = std::fs::read_to_string(swagger_location).unwrap();
+                let data_format = swagger_location
+                    .extension()
+                    .and_then(|ext| DataFormat::from_extension(&ext.to_string_lossy()))
+                    .unwrap_or(DataFormat::Yaml);
+                let data = std::fs::read_to_string(swagger_location).unwrap();
 
                 match language {
                     Language::Rust => {
-                        let swagger: Swagger<rust::Type> = serde_yaml::from_str(&yaml).unwrap();
+                        let swagger: Swagger<rust::Type> =
+                            data_format.deserialize_from_str(&data).unwrap();
                         let backend = Box::new(rust::Codegen::default());
                         let mut codegen = CodeGenerator::new(swagger, backend);
                         let mut writer = Box::new(std::io::stdout()) as Box<dyn std::io::Write>;
                         codegen.generate_models(&mut writer).unwrap();
                     }
                     Language::Python => {
-                        let swagger: Swagger<python::Type> = serde_yaml::from_str(&yaml).unwrap();
+                        let swagger: Swagger<python::Type> =
+                            data_format.deserialize_from_str(&data).unwrap();
                         let backend = Box::new(python::Codegen::default());
                         let mut codegen = CodeGenerator::new(swagger, backend);
                         let mut writer = Box::new(std::io::stdout()) as Box<dyn std::io::Write>;
