@@ -87,6 +87,12 @@ impl<T: Type> Prototyper<T> {
                 trace!("handling property {prop_name}, parent: {:?}", &parent_name);
                 match prop_schema {
                     Item::Object(prop_schema) => {
+                        let mut chars = prop_name.chars();
+                        let prop_name = format!(
+                            "{}{}",
+                            chars.next().unwrap_or_default().to_uppercase(),
+                            chars.as_str()
+                        );
                         let prop_name = prop_schema
                             .name()
                             .unwrap_or(format!("{name}{prop_name}InlineItem"));
