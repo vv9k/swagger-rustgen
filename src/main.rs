@@ -68,13 +68,13 @@ impl DataFormat {
         }
     }
 
-    pub fn deserialize_from_str<T: serde::de::DeserializeOwned>(
+    pub fn deserialize_from_slice<T: serde::de::DeserializeOwned>(
         self,
-        data: &str,
+        data: &[u8],
     ) -> Result<T, Box<dyn std::error::Error>> {
         match self {
-            DataFormat::Json => Ok(serde_json::from_str::<T>(&data)?),
-            DataFormat::Yaml => Ok(serde_yaml::from_str::<T>(&data)?),
+            DataFormat::Json => Ok(serde_json::from_slice::<T>(&data)?),
+            DataFormat::Yaml => Ok(serde_yaml::from_slice::<T>(&data)?),
         }
     }
 }
@@ -93,12 +93,12 @@ fn main() {
                     .extension()
                     .and_then(|ext| DataFormat::from_extension(&ext.to_string_lossy()))
                     .unwrap_or(DataFormat::Yaml);
-                let data = std::fs::read_to_string(swagger_location).unwrap();
+                let data = std::fs::read(swagger_location).unwrap();
 
                 match language {
                     Language::Rust => {
                         let swagger: Swagger<rust::Type> =
-                            data_format.deserialize_from_str(&data).unwrap();
+                            data_format.deserialize_from_slice(&data).unwrap();
                         let backend = Box::new(rust::Codegen::default());
                         let mut codegen = CodeGenerator::new(swagger, backend);
                         let mut writer = Box::new(std::io::stdout()) as Box<dyn std::io::Write>;
@@ -106,7 +106,7 @@ fn main() {
                     }
                     Language::Python => {
                         let swagger: Swagger<python::Type> =
-                            data_format.deserialize_from_str(&data).unwrap();
+                            data_format.deserialize_from_slice(&data).unwrap();
                         let backend = Box::new(python::Codegen::default());
                         let mut codegen = CodeGenerator::new(swagger, backend);
                         let mut writer = Box::new(std::io::stdout()) as Box<dyn std::io::Write>;
